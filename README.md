@@ -47,7 +47,7 @@ go build
 ./faber
 ```
 
-### Run Faber Controller
+### Run Alice Controller
 - Alice controller opens 8032 port. 
 - It receives webhook message from alice agent by POST http://localhost:8032/webhooks/topic/{topic}/ 
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
