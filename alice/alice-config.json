@@ -1,0 +1,7 @@
+{
+  "WebHookPort"    : ":8032",
+  "AdminURL"       : "http://localhost:8031",
+  "FaberContURL"   : "http://localhost:8022",
+  "HttpTimeout"    : 30,
+  "Debug"          : false
+}

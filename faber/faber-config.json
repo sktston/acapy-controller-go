@@ -1,0 +1,9 @@
+{
+  "WebHookPort"    : ":8022",
+  "AdminURL"       : "http://localhost:8021",
+  "TailsServerURL" : "http://13.124.169.12",
+  "VonNetworkURL"  : "http://54.180.86.51",
+  "HttpTimeout"    : 30,
+  "EnableRevoke"   : false,
+  "Debug"          : false
+}
