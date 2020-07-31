@@ -9,8 +9,8 @@ The controller implementation is in directory [alice](./alice) & [faber](./faber
 Repository structure details:
 ```
 /
-├── alice/   # Alice(Holder) controller implementation
-├── faber/   # Faber(Issuer&Verifier) controller implementation
+├── alice/   # Alice (Holder) controller implementation
+├── faber/   # Faber (Issuer&Verifier) controller implementation
 └── utils/   # Common utility functions 
 ```
 
@@ -38,6 +38,7 @@ docker-compose up
 - Faber controller opens 8022 port. 
 - It receives webhook message from faber agent by POST http://localhost:8022/webhooks/topic/{topic}/ 
 - Also, It presents invitation by GET http://localhost:8022/invitation
+- Detailed configuration is in [faber-config.json](./faber/faber-config.json)
 ```
 cd ~/work 
 git pull https://github.com/sktston/acapy-controller-go.git
@@ -50,6 +51,7 @@ go build
 - Alice controller opens 8032 port. 
 - It receives webhook message from alice agent by POST http://localhost:8032/webhooks/topic/{topic}/ 
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
+- Detailed configuration is in [alice-config.json](./alice/alice-config.json)
 ```
 cd ~/work 
 cd ~/work/acapy-controller-go/alice

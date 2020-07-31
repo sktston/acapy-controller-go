@@ -29,8 +29,6 @@ type ControllerConfig struct {
 	Debug        	bool    		`json:"Debug"`
 
 	// Faber only
-	TailsServerURL	string			`json:"TailsServerURL"`
-	VonNetworkURL	string			`json:"VonNetworkURL"`
 	EnableRevoke	bool			`json:"EnableRevoke"`
 
 	// Alice only

@@ -7,11 +7,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,7 +26,7 @@ var (
 	config utils.ControllerConfig
 	router *gin.Engine
 
-	version, schemaID, credDefID, revRegID string
+	version, schemaID, credDefID string
 )
 
 func main() {
@@ -65,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("Now, waiting web hook event from agency...")
+	log.Info("Waiting web hook event from agent...")
 	select {}
 
 	return
@@ -279,7 +276,8 @@ func createCredDef()  error {
 	body := utils.PrettyJson(`{
 		"schema_id": "` + schemaID + `",
 		"tag": "tag.` + version + `",
-		"support_revocation": true
+		"support_revocation": true,
+		"revocation_registry_size": 50
 	}`, "")
 
 	log.Info("Create a new credential definition on the ledger:" + utils.PrettyJson(body))
@@ -293,77 +291,6 @@ func createCredDef()  error {
 	if credDefID == "" {
 		return fmt.Errorf("credDefID does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
-
-	body = utils.PrettyJson(`{
-		"max_cred_num": 100,
-		"credential_definition_id": "` + credDefID + `",
-		"issuance_by_default": true
-	}`, "")
-
-	log.Info("Create a new revocation registry:" + utils.PrettyJson(body))
-	respAsBytes, err = utils.RequestPost(config.AdminURL, "/revocation/create-registry", []byte(body), config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestPost() error:", err.Error())
-		return err
-	}
-
-	revRegID = gjson.Get(string(respAsBytes), "result.revoc_reg_id").String()
-	if revRegID == "" {
-		return fmt.Errorf("revRegID does not exist\nrespAsBytes: %s: ", string(respAsBytes))
-	}
-
-	body = utils.PrettyJson(`{
-		"tails_public_uri": "` + config.TailsServerURL + "/" + revRegID + `"
-	}`, "")
-
-	log.Info("Update tails file location of the revocation registry:" + utils.PrettyJson(body))
-	_, err = utils.RequestPatch(config.AdminURL, "/revocation/registry/" + revRegID, []byte(body), config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestPatch() error:", err.Error())
-		return err
-	}
-
-	log.Info("Publish the revocation registry on the ledger:")
-	_, err = utils.RequestPost(config.AdminURL, "/revocation/registry/" + revRegID + "/publish", []byte("{}"), config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestPost() error:", err.Error())
-		return err
-	}
-
-	log.Info("Get tails file of the revocation registry:")
-	tailsFileAsBytes, err := utils.RequestGETByteArray(config.AdminURL, "/revocation/registry/" + revRegID + "/tails-file", config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestGETByteArray() error:", err.Error())
-		return err
-	}
-
-	log.Info("Get genesis file of the revocation registry:")
-	genesisAsBytes, err :=  utils.RequestGet(config.VonNetworkURL, "/genesis", config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestGET() error:", err.Error())
-		return err
-	}
-
-	log.Info("Put tails file to tails file server:")
-	// make multipart form
-	bodyBuffer := &bytes.Buffer{}
-	writer := multipart.NewWriter(bodyBuffer)
-
-	// genesis field
-	_ = writer.WriteField("genesis", string(genesisAsBytes))
-
-	// tails field
-	tailsWriter, _ := writer.CreateFormField("tails")
-	_, _ = io.Copy(tailsWriter, bytes.NewBuffer(tailsFileAsBytes))
-
-	_ = writer.Close()
-
-	respAsBytes, err = utils.RequestPut(config.TailsServerURL, "/" + revRegID, bodyBuffer.Bytes(), config.HttpTimeout, "Content-Type:" + writer.FormDataContentType())
-	if err != nil {
-		log.Error("utils.RequestPut() error:", err.Error())
-		return err
-	}
-	log.Info("respAsBytes:" + string(respAsBytes))
 
 	log.Info("createCredDef <<< done")
 	return nil

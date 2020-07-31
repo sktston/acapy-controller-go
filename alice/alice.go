@@ -9,15 +9,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/sktston/acapy-controller-go/utils"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"net"
 	"net/http"
 	"os"
-
-	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
-
-	"github.com/sktston/acapy-controller-go/utils"
+	"time"
 )
 
 var (
@@ -25,7 +24,7 @@ var (
 	config utils.ControllerConfig
 	router *gin.Engine
 
-	exitSignal = make(chan bool)
+	exitFlag = make(chan bool)
 )
 
 func main() {
@@ -61,10 +60,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("Now, waiting web hook event from agency...")
+	log.Info("Waiting web hook event from agent...")
 	select {
-	case <-exitSignal:
-		// waiting for exitSignal
+	case <-exitFlag:
+		// Wait completion of sending last http response (present_proof, presentation_acked)
+		time.Sleep(time.Millisecond * 500)
 		break
 	}
 
@@ -161,9 +161,10 @@ func handleMessage(ctx *gin.Context) {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
 			}
-		} else if (state == "presentation_acked") {
+		} else if state == "presentation_acked" {
+			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> Alice exits")
 			// Alice exit
-			exitSignal <- true
+			exitFlag <- true
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
