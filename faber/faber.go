@@ -166,7 +166,7 @@ func createInvitationURL(ctx *gin.Context) {
 		invitationURL = qrCodeString + "\n" + invitationURL
 	}
 
-	log.Info("createInvitationURL <<< invitationURL:" + invitationURL)
+	log.Info("createInvitationURL <<< invitationURL:\n" + invitationURL)
 	ctx.String(http.StatusOK, invitationURL)
 
 	return
