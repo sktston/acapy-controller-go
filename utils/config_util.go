@@ -30,6 +30,7 @@ type ControllerConfig struct {
 
 	// Faber only
 	EnableRevoke	bool			`json:"EnableRevoke"`
+	GenerateQR		bool			`json:"GenerateQR"`
 
 	// Alice only
 	FaberContURL	string			`json:"FaberContURL"`

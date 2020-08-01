@@ -3,5 +3,6 @@
   "AdminURL"       : "http://localhost:8021",
   "HttpTimeout"    : 30,
   "EnableRevoke"   : false,
+  "GenerateQR"     : true,
   "Debug"          : false
 }

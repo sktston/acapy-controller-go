@@ -9,6 +9,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/skip2/go-qrcode"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,7 +44,7 @@ func main() {
 	// Set up http router
 	setupHttpRouter()
 
-   // Start web server
+	// Start web server
 	listener, err := net.Listen("tcp", config.WebHookPort)
 	if err != nil {
 		log.Error(err.Error())
@@ -155,6 +156,14 @@ func createInvitationURL(ctx *gin.Context) {
 	if invitationURL == "" {
 		utils.HttpError(ctx, http.StatusInternalServerError, err)
 		return
+	}
+
+	// Generate QR code
+	if config.GenerateQR {
+		// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
+		qrCode, _ := qrcode.New(invitationURL, qrcode.Low)
+		qrCodeString := qrCode.ToSmallString(false)
+		invitationURL = qrCodeString + "\n" + invitationURL
 	}
 
 	log.Info("createInvitationURL <<< invitationURL:" + invitationURL)

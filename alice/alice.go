@@ -28,7 +28,7 @@ var (
 )
 
 func main() {
-	// Read faber-config.yaml file
+	// Read alice-config.yaml file
 	err := config.ReadConfig("./alice-config.json")
 	if err != nil {
 		log.Error(err.Error())
