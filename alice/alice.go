@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -16,69 +17,79 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 )
 
 var (
 	log    = utils.Log
 	config utils.ControllerConfig
-	router *gin.Engine
-
-	exitFlag = make(chan bool)
 )
 
 func main() {
 	// Read alice-config.yaml file
 	err := config.ReadConfig("./alice-config.json")
 	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
+		log.Fatal(err.Error())
 	}
 
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
 
 	// Set up http router
-	setupHttpRouter()
+	router := setupHttpRouter()
 
-	// Start web server
+	// Start http server
 	listener, err := net.Listen("tcp", config.WebHookPort)
 	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
+		log.Fatal(err.Error())
+	}
+
+	httpServer := &http.Server{
+		Handler: router,
 	}
 
 	go func() {
-		_ = http.Serve(listener, router)
+		err = httpServer.Serve(listener)
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatal(err.Error())
+		}
 	}()
 	log.Info("Listen on http://" + utils.GetOutboundIP().String() + config.WebHookPort)
 
 	// Initialize Alice
 	err = initializeAfterStartup()
 	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
+		log.Fatal(err.Error())
 	}
+
+	// Set exit signal
+	exit := make(chan os.Signal)
+	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	log.Info("Waiting web hook event from agent...")
 	select {
-	case <-exitFlag:
-		// Wait completion of sending last http response (present_proof, presentation_acked)
-		time.Sleep(time.Millisecond * 500)
-		break
+	case <-exit:
+		// Shutdown http server gracefully
+		err = httpServer.Shutdown(context.Background())
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		log.Info("Process exits successfully")
 	}
+	close(exit)
 
 	return
 }
 
-func setupHttpRouter() {
-	router = gin.New()
+func setupHttpRouter() *gin.Engine {
+	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(gin.Logger())
 
 	router.POST("/webhooks/topic/:topic", handleMessage)
 
-	return
+	return router
 }
 
 func initializeAfterStartup() error {
@@ -164,7 +175,7 @@ func handleMessage(ctx *gin.Context) {
 		} else if state == "presentation_acked" {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> Alice exits")
 			// Alice exit
-			exitFlag <- true
+			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}

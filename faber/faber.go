@@ -25,8 +25,6 @@ import (
 var (
 	log    = utils.Log
 	config utils.ControllerConfig
-	router *gin.Engine
-
 	version, schemaID, credDefID string
 )
 
@@ -34,33 +32,38 @@ func main() {
 	// Read faber-config.yaml file
 	err := config.ReadConfig("./faber-config.json")
 	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
+		log.Fatal(err.Error())
 	}
 
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
 
 	// Set up http router
-	setupHttpRouter()
+	router := setupHttpRouter()
 
-	// Start web server
+	// Start http server
 	listener, err := net.Listen("tcp", config.WebHookPort)
 	if err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
 
+	httpServer := &http.Server{
+		Handler: router,
+	}
+
 	go func() {
-		_ = http.Serve(listener, router)
+		err = httpServer.Serve(listener)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
 	}()
 	log.Info("Listen on http://" + utils.GetOutboundIP().String() + config.WebHookPort)
 
 	// Initialize Faber
 	err = initializeAfterStartup()
 	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
+		log.Fatal(err.Error())
 	}
 
 	log.Info("Waiting web hook event from agent...")
@@ -69,8 +72,8 @@ func main() {
 	return
 }
 
-func setupHttpRouter() {
-	router = gin.New()
+func setupHttpRouter() *gin.Engine {
+	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(gin.Logger())
 
@@ -78,7 +81,7 @@ func setupHttpRouter() {
 	router.GET("/invitation-url", createInvitationURL)
 	router.POST("/webhooks/topic/:topic", handleMessage)
 
-	return
+	return router
 }
 
 func initializeAfterStartup() error {
