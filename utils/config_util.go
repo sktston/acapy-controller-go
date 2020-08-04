@@ -1,5 +1,5 @@
 /**************************************************
- * Auther  : Jihyuck Yun                          *
+ * Author  : Jihyuck Yun                          *
  *           dr.jhyun@gmail.com                   *
  * since July 28, 2020                            *
  **************************************************/
@@ -23,17 +23,17 @@ import (
 
 type ControllerConfig struct {
 	// Common
-	WebHookPort		string			`json:"WebHookPort" validate:"required,hostname_port"`
-	AdminURL		string			`json:"AdminURL" validate:"required,url"`
-	HttpTimeout		time.Duration	`json:"HttpTimeout" validate:"required,gt=0"`
-	Debug        	bool    		`json:"Debug"`
+	WebHookPort string        `json:"WebHookPort" validate:"required,hostname_port"`
+	AdminURL    string        `json:"AdminURL" validate:"required,url"`
+	HttpTimeout time.Duration `json:"HttpTimeout" validate:"required,gt=0"`
+	Debug       bool          `json:"Debug"`
 
 	// Faber only
-	EnableRevoke	bool			`json:"EnableRevoke"`
-	GenerateQR		bool			`json:"GenerateQR"`
+	EnableRevoke bool `json:"EnableRevoke"`
+	GenerateQR   bool `json:"GenerateQR"`
 
 	// Alice only
-	FaberContURL	string			`json:"FaberContURL"`
+	FaberContURL string `json:"FaberContURL"`
 }
 
 var (

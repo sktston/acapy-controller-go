@@ -1,5 +1,5 @@
 /**************************************************
- * Auther  : Jihyuck Yun                          *
+ * Author  : Jihyuck Yun                          *
  *           dr.jhyun@gmail.com                   *
  * since July 28, 2020                            *
  **************************************************/
@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	log    = utils.Log
-	config utils.ControllerConfig
+	log                          = utils.Log
+	config                       utils.ControllerConfig
 	version, schemaID, credDefID string
 )
 
@@ -178,8 +178,8 @@ func createInvitationURL(ctx *gin.Context) {
 func handleMessage(ctx *gin.Context) {
 	var (
 		topic, state string
-		body map[string]interface{}
-		err error
+		body         map[string]interface{}
+		err          error
 	)
 
 	err = ctx.ShouldBindJSON(&body)
@@ -262,7 +262,7 @@ func createSchema() error {
 
 	body := utils.PrettyJson(`{
 		"schema_name": "degree_schema",
-		"schema_version": "` + version + `",
+		"schema_version": "`+version+`",
 		"attributes": ["name", "date", "degree", "age"]
 	}`, "")
 
@@ -282,12 +282,12 @@ func createSchema() error {
 	return nil
 }
 
-func createCredDef()  error {
+func createCredDef() error {
 	log.Info("createCredDef >>> start")
 
 	body := utils.PrettyJson(`{
-		"schema_id": "` + schemaID + `",
-		"tag": "tag.` + version + `",
+		"schema_id": "`+schemaID+`",
+		"tag": "tag.`+version+`",
 		"support_revocation": true,
 		"revocation_registry_size": 50
 	}`, "")
@@ -312,8 +312,8 @@ func sendCredentialOffer(connectionID string) error {
 	log.Info("sendCredentialOffer >>> connectionID:" + connectionID)
 
 	body := utils.PrettyJson(`{
-		"connection_id":"` + connectionID + `",
-		"cred_def_id"  :"` + credDefID + `",
+		"connection_id":"`+connectionID+`",
+		"cred_def_id"  :"`+credDefID+`",
 		"credential_preview": {
 			"@type": "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/issue-credential/1.0/credential-preview",
 			"attributes": [
@@ -339,22 +339,22 @@ func sendProofRequest(connectionID string) error {
 	log.Info("sendCredentialOffer >>> connectionID:" + connectionID)
 
 	body := utils.PrettyJson(`{
-		"connection_id": "` + connectionID + `",
+		"connection_id": "`+connectionID+`",
 		"proof_request": {
 			"name": "proof_name",
 			"version": "1.0",
 			"requested_attributes": {
 				"attr_name": {
 					"name": "name",
-					"restrictions": [ { "cred_def_id": "` + credDefID + `" } ]
+					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
 				},
 				"attr_date": {
 					"name": "date",
-					"restrictions": [ { "cred_def_id": "` + credDefID + `" } ]
+					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
 				},
 				"attr_degree": {
 					"name": "degree",
-					"restrictions": [ { "cred_def_id": "` + credDefID + `" } ]
+					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
 				}
 			},
 			"requested_predicates": {
@@ -362,7 +362,7 @@ func sendProofRequest(connectionID string) error {
 					"name"        : "age",
 					"p_type"      : ">=",
 					"p_value"     : 20,
-					"restrictions": [ { "cred_def_id": "` + credDefID + `" } ]
+					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
 				}
 			}
 		}

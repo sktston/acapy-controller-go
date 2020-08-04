@@ -1,5 +1,5 @@
 /**************************************************
- * Auther  : Jihyuck Yun                          *
+ * Author  : Jihyuck Yun                          *
  *           dr.jhyun@gmail.com                   *
  * since July 28, 2020                            *
  **************************************************/
@@ -52,7 +52,7 @@ func httpRequest(httpMethod string, url string, uri string, body []byte, timeout
 		return []byte(""), err
 	}
 
- 	// Set request headers
+	// Set request headers
 	for _, header := range headers {
 		keyValue := strings.Split(header, ":")
 		key := strings.TrimSpace(keyValue[0])
@@ -100,8 +100,8 @@ func httpRequest(httpMethod string, url string, uri string, body []byte, timeout
 
 func HttpError(ctx *gin.Context, status int, err error) {
 	errStruct := gin.H{
-		"Code"    : status,
-		"Message" : err.Error(),
+		"Code":    status,
+		"Message": err.Error(),
 	}
 
 	ctx.JSON(status, errStruct)
@@ -139,5 +139,5 @@ func PrettyJson(jsonString string, indent ...string) string {
 
 func GetRandomInt(min int, max int) int {
 	rand.Seed(time.Now().UnixNano())
-	return rand.Intn(max - min + 1) + min
+	return rand.Intn(max-min+1) + min
 }
