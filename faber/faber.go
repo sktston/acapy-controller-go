@@ -1,6 +1,6 @@
 /**************************************************
- * Author  : Jihyuck Yun                          *
- *           dr.jhyun@gmail.com                   *
+ * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
+ *           Baegjae Sung (baegjae@gmail.com)     *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -8,24 +8,24 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
+	"github.com/tidwall/gjson"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
-
 	"github.com/sktston/acapy-controller-go/utils"
 )
 
 var (
-	log                          = utils.Log
-	config                       utils.ControllerConfig
-	version, schemaID, credDefID string
+	log                             = utils.Log
+	config                          utils.ControllerConfig
+	webhookUrl, schemaID, credDefID string
 )
 
 func main() {
@@ -41,8 +41,21 @@ func main() {
 	// Set up http router
 	router := setupHttpRouter()
 
+	// Get port from WebhookUrl
+	if config.IssueOnly == true {
+		webhookUrl = config.IssuerWebhookUrl
+	} else if config.VerifyOnly == true {
+		webhookUrl = config.VerifierWebhookUrl
+	} else {
+		webhookUrl = config.IssuerWebhookUrl
+	}
+
+	urlParse, _ := url.Parse(webhookUrl)
+	_, port, _ := net.SplitHostPort(urlParse.Host)
+	port = ":" + port
+
 	// Start http server
-	listener, err := net.Listen("tcp", config.WebHookPort)
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
@@ -58,7 +71,7 @@ func main() {
 			log.Fatal(err.Error())
 		}
 	}()
-	log.Info("Listen on http://" + utils.GetOutboundIP().String() + config.WebHookPort)
+	log.Info("Listen on http://" + utils.GetOutboundIP().String() + port)
 
 	// Initialize Faber
 	err = initializeAfterStartup()
@@ -85,42 +98,53 @@ func setupHttpRouter() *gin.Engine {
 }
 
 func initializeAfterStartup() error {
-	log.Info("initializeAfterStartup >>> start")
-
-	respAsBytes, err := utils.RequestGet(config.AdminURL, "/credential-definitions/created", config.HttpTimeout)
+	log.Info("Create wallet and did, register did as issuer, and register webhook url")
+	err := createWalletAndDid()
 	if err != nil {
-		log.Error("utils.RequestGet() error:", err.Error())
+		log.Error("createWalletAndDid() error:", err.Error())
 		return err
 	}
 
-	credDefIDs := gjson.Get(string(respAsBytes), "credential_definition_ids")
-	if len(credDefIDs.Array()) == 0 {
-		log.Info("Agent does not have credential definition -> Create it")
-		version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-			strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-			strconv.Itoa(utils.GetRandomInt(1, 99))
+	if config.VerifyOnly == false {
+		err = registerDidAsIssuer()
+		if err != nil {
+			log.Error("registerDidAsIssuer() error:", err.Error())
+			return err
+		}
+	}
 
+	err = registerWebhookUrl()
+	if err != nil {
+		log.Error("registerWebhookUrl() error:", err.Error())
+		return err
+	}
+
+	if config.VerifyOnly == false {
+		log.Info("Create schema and credential definition")
 		err = createSchema()
 		if err != nil {
 			log.Error("createSchema() error:", err.Error())
 			return err
 		}
 
-		err = createCredDef()
+		err = createCredentialDefinition()
 		if err != nil {
 			log.Error("createCredDef() error:", err.Error())
 			return err
 		}
-	} else {
-		log.Info("Agent has credential definitions -> Use first one")
-		credDefID = credDefIDs.Array()[0].String()
 	}
 
-	log.Info("Controller uses below configuration")
-	log.Info("- credential definition ID:" + credDefID)
+	log.Info("Configuration of faber:")
+	log.Info("- wallet name: " + config.WalletName)
+	log.Info("- seed: " + config.Seed)
+	log.Info("- did: " + config.Did)
+	log.Info("- verification key: " + config.VerKey)
+	log.Info("- webhook url: " + webhookUrl)
+	log.Info("- schema ID: " + schemaID)
+	log.Info("- credential definition ID: " + credDefID)
 
-	log.Info("initializeAfterStartup <<< done")
-	log.Info("Setting of schema and credential definition is done. Run alice now.")
+	log.Info("Initialization is done.")
+	log.Info("Run alice now.")
 
 	return nil
 }
@@ -128,7 +152,7 @@ func initializeAfterStartup() error {
 func createInvitation(ctx *gin.Context) {
 	log.Info("createInvitation >>> start")
 
-	respAsBytes, err := utils.RequestPost(config.AdminURL, "/connections/create-invitation", []byte("{}"), config.HttpTimeout)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation", config.WalletName, []byte("{}"))
 	if err != nil {
 		utils.HttpError(ctx, http.StatusInternalServerError, err)
 		return
@@ -136,7 +160,7 @@ func createInvitation(ctx *gin.Context) {
 
 	invitation := gjson.Get(string(respAsBytes), "invitation").String()
 	if invitation == "" {
-		utils.HttpError(ctx, http.StatusInternalServerError, err)
+		utils.HttpError(ctx, http.StatusInternalServerError, errors.New("invitation is null"))
 		return
 	}
 
@@ -149,7 +173,7 @@ func createInvitation(ctx *gin.Context) {
 func createInvitationURL(ctx *gin.Context) {
 	log.Info("createInvitationUrl >>> start")
 
-	respAsBytes, err := utils.RequestPost(config.AdminURL, "/connections/create-invitation", []byte("{}"), config.HttpTimeout)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation", config.WalletName, []byte("{}"))
 	if err != nil {
 		utils.HttpError(ctx, http.StatusInternalServerError, err)
 		return
@@ -157,7 +181,7 @@ func createInvitationURL(ctx *gin.Context) {
 
 	invitationURL := gjson.Get(string(respAsBytes), "invitation_url").String()
 	if invitationURL == "" {
-		utils.HttpError(ctx, http.StatusInternalServerError, err)
+		utils.HttpError(ctx, http.StatusInternalServerError, errors.New("invitation is null"))
 		return
 	}
 
@@ -189,17 +213,30 @@ func handleMessage(ctx *gin.Context) {
 	}
 
 	topic = ctx.Param("topic")
-	state = body["state"].(string)
+	if topic == "problem_report" {
+		state = ""
+	} else {
+		state = body["state"].(string)
+	}
 
 	switch topic {
 	case "connections":
 		// When connection with alice is done, send credential offer
 		if state == "active" {
-			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer")
-			err = sendCredentialOffer(body["connection_id"].(string))
-			if err != nil {
-				utils.HttpError(ctx, http.StatusInternalServerError, err)
-				return
+			if config.VerifyOnly == false {
+				log.Info("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer")
+				err = sendCredentialOffer(body["connection_id"].(string))
+				if err != nil {
+					utils.HttpError(ctx, http.StatusInternalServerError, err)
+					return
+				}
+			} else {
+				log.Info("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest")
+				err = sendProofRequest(body["connection_id"].(string))
+				if err != nil {
+					utils.HttpError(ctx, http.StatusInternalServerError, err)
+					return
+				}
 			}
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
@@ -208,19 +245,23 @@ func handleMessage(ctx *gin.Context) {
 	case "issue_credential":
 		// When credential is issued and acked, send proof(presentation) request
 		if state == "credential_acked" {
-			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest")
-			if config.EnableRevoke == true {
+			if config.SupportRevoke == true && config.RevokeAfterIssue == true {
 				err = revokeCredential(body["revoc_reg_id"].(string), body["revocation_id"].(string))
 				if err != nil {
 					utils.HttpError(ctx, http.StatusInternalServerError, err)
 					return
 				}
 			}
-			err = sendProofRequest(body["connection_id"].(string))
-			if err != nil {
-				utils.HttpError(ctx, http.StatusInternalServerError, err)
-				return
+
+			if config.IssueOnly == false {
+				log.Info("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest")
+				err = sendProofRequest(body["connection_id"].(string))
+				if err != nil {
+					utils.HttpError(ctx, http.StatusInternalServerError, err)
+					return
+				}
 			}
+
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -250,6 +291,15 @@ func handleMessage(ctx *gin.Context) {
 	case "revocation_registry":
 		log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 
+	case "problem_report":
+		bodyAsBytes, err := json.MarshalIndent(body, "", "  ")
+		if err != nil {
+			utils.HttpError(ctx, http.StatusInternalServerError, err)
+			return
+		}
+		log.Warn("- Case (topic:" + topic + ") -> Print body")
+		log.Warn("  - body:" + string(bodyAsBytes))
+
 	default:
 		log.Warn("- Warning Unexpected topic:" + topic)
 	}
@@ -257,17 +307,109 @@ func handleMessage(ctx *gin.Context) {
 	return
 }
 
+func createWalletAndDid() error {
+	log.Info("createWalletAndDid >>> start")
+
+	body := utils.PrettyJson(`{
+		"name": "`+config.WalletName+`",
+		"key": "`+config.WalletName+".key"+`",
+		"type": "indy"
+	}`, "")
+
+	log.Info("Create a new wallet:" + utils.PrettyJson(body))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", config.AdminWalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+
+	body = utils.PrettyJson(`{
+		"seed": "`+config.Seed+`"
+	}`, "")
+
+	log.Info("Create a new local did:" + utils.PrettyJson(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", config.WalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+
+	config.Did = gjson.Get(string(respAsBytes), "result.did").String()
+	if config.Did == "" {
+		return fmt.Errorf("Did does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+	}
+
+	config.VerKey = gjson.Get(string(respAsBytes), "result.verkey").String()
+	if config.VerKey == "" {
+		return fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+	}
+	log.Info("created did: " + config.Did + ", verkey: " + config.VerKey)
+
+	log.Info("createWalletAndDid <<< done")
+	return nil
+}
+
+func registerDidAsIssuer() error {
+	log.Info("registerDidAsIssuer >>> start")
+
+	params := "?did=" + config.Did +
+		"&verkey=" + config.VerKey +
+		"&alias=" + config.WalletName +
+		"&role=ENDORSER"
+
+	log.Info("Register the did to the ledger as a ENDORSER")
+
+	// did of admin wallet must have STEWARD role
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/ledger/register-nym"+params, config.AdminWalletName, []byte("{}"))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+
+	params = "?did=" + config.Did
+	log.Info("Assign the did to public: " + config.Did)
+
+	respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/public"+params, config.WalletName, []byte("{}"))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
+
+	log.Info("registerDidAsIssuer <<< done")
+	return nil
+}
+
+func registerWebhookUrl() error {
+	log.Info("registerWebhookUrl >>> start")
+
+	body := utils.PrettyJson(`{
+		"target_url": "`+webhookUrl+`"
+	}`, "")
+
+	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", config.WalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
+
+	log.Info("registerWebhookUrl <<< done")
+	return nil
+}
+
 func createSchema() error {
 	log.Info("createSchema >>> start")
 
 	body := utils.PrettyJson(`{
 		"schema_name": "degree_schema",
-		"schema_version": "`+version+`",
+		"schema_version": "`+config.Version+`",
 		"attributes": ["name", "date", "degree", "age"]
 	}`, "")
 
 	log.Info("Create a new schema on the ledger:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AdminURL, "/schemas", []byte(body), config.HttpTimeout)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/schemas", config.WalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -282,18 +424,18 @@ func createSchema() error {
 	return nil
 }
 
-func createCredDef() error {
-	log.Info("createCredDef >>> start")
+func createCredentialDefinition() error {
+	log.Info("createCredentialDefinition >>> start")
 
 	body := utils.PrettyJson(`{
 		"schema_id": "`+schemaID+`",
-		"tag": "tag.`+version+`",
-		"support_revocation": true,
-		"revocation_registry_size": 50
+		"tag": "tag.`+config.Version+`",
+		"support_revocation": `+strconv.FormatBool(config.SupportRevoke)+`,
+		"revocation_registry_size": 10
 	}`, "")
 
 	log.Info("Create a new credential definition on the ledger:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AdminURL, "/credential-definitions", []byte(body), config.HttpTimeout)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/credential-definitions", config.WalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -304,7 +446,7 @@ func createCredDef() error {
 		return fmt.Errorf("credDefID does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
 
-	log.Info("createCredDef <<< done")
+	log.Info("createCredentialDefinition <<< done")
 	return nil
 }
 
@@ -325,7 +467,7 @@ func sendCredentialOffer(connectionID string) error {
 		}
 	}`, "")
 
-	_, err := utils.RequestPost(config.AdminURL, "/issue-credential/send-offer", []byte(body), config.HttpTimeout)
+	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/send-offer", config.WalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -346,15 +488,15 @@ func sendProofRequest(connectionID string) error {
 			"requested_attributes": {
 				"attr_name": {
 					"name": "name",
-					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
+					"restrictions": [ { "schema_name": "degree_schema" } ]
 				},
 				"attr_date": {
 					"name": "date",
-					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
+					"restrictions": [ { "schema_name": "degree_schema" } ]
 				},
 				"attr_degree": {
 					"name": "degree",
-					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
+					"restrictions": [ { "schema_name": "degree_schema" } ]
 				}
 			},
 			"requested_predicates": {
@@ -362,13 +504,13 @@ func sendProofRequest(connectionID string) error {
 					"name"        : "age",
 					"p_type"      : ">=",
 					"p_value"     : 20,
-					"restrictions": [ { "cred_def_id": "`+credDefID+`" } ]
+					"restrictions": [ { "schema_name": "degree_schema" } ]
 				}
 			}
 		}
 	}`, "")
 
-	_, err := utils.RequestPost(config.AdminURL, "/present-proof/send-request", []byte(body), config.HttpTimeout)
+	_, err := utils.RequestPost(config.AgentApiUrl, "/present-proof/send-request", config.WalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -388,7 +530,7 @@ func revokeCredential(revRegId string, credRevId string) error {
 
 	URI := "/issue-credential/revoke" + "?" + queryParam.Encode()
 
-	_, err := utils.RequestPost(config.AdminURL, URI, []byte("{}"), config.HttpTimeout)
+	_, err := utils.RequestPost(config.AgentApiUrl, URI, config.WalletName, []byte("{}"))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err

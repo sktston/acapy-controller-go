@@ -9,31 +9,46 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+	goLog "github.com/withmandala/go-log"
+	"gopkg.in/alecthomas/kingpin.v2"
 	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
-	goLog "github.com/withmandala/go-log"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"strconv"
+	"strings"
 )
 
 type ControllerConfig struct {
-	// Common
-	WebHookPort string        `json:"WebHookPort" validate:"required,hostname_port"`
-	AdminURL    string        `json:"AdminURL" validate:"required,url"`
-	HttpTimeout time.Duration `json:"HttpTimeout" validate:"required,gt=0"`
-	Debug       bool          `json:"Debug"`
+	// Common from json file
+	AgentApiUrl     string `json:"AgentApiUrl" validate:"required,url"`
+	AdminWalletName string `json:"AdminWalletName" validate:"required"`
+	WalletName      string `json:"WalletName" validate:"required"`
+	Debug           bool   `json:"Debug"`
 
-	// Faber only
-	EnableRevoke bool `json:"EnableRevoke"`
-	GenerateQR   bool `json:"GenerateQR"`
+	// Faber only from json file
+	IssuerWebhookUrl   string `json:"IssuerWebhookUrl" validate:"omitempty,url"`
+	VerifierWebhookUrl string `json:"VerifierWebhookUrl" validate:"omitempty,url"`
+	SupportRevoke      bool   `json:"SupportRevoke"`
+	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
+	GenerateQR         bool   `json:"GenerateQR"`
 
-	// Alice only
-	FaberContURL string `json:"FaberContURL"`
+	// Alice only from json file
+	HolderWebhookUrl   string `json:"HolderWebhookUrl" validate:"omitempty,url"`
+	FaberContURL string `json:"FaberContURL" validate:"omitempty,url`
+
+	// Common by assignment
+	Version string
+	Seed    string
+	Did     string
+	VerKey  string
+
+	// Faber only, Command line parameters
+	IssueOnly  bool
+	VerifyOnly bool
 }
 
 var (
@@ -44,15 +59,20 @@ var (
 
 func (config *ControllerConfig) ReadConfig(fileName string) error {
 	var (
-		app        = kingpin.New(os.Args[0], "Faber controller")
-		configFile = app.Flag("config", "Config json file").Short('c').PlaceHolder("CONFIG_FILE").Default(fileName).File()
+		app           = kingpin.New(os.Args[0], "Faber controller")
+		configFilePtr = app.Flag("config-file", "Config json file").Short('c').PlaceHolder("CONFIG_FILE").Default(fileName).File()
+		issueOnlyPtr  = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
+		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
 	)
 
 	app.Version(appVersion)
 	app.HelpFlag.Short('h')
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	jsonData, err := ioutil.ReadAll(*configFile)
+	config.IssueOnly = *issueOnlyPtr
+	config.VerifyOnly = *verifyOnlyPtr
+
+	jsonData, err := ioutil.ReadAll(*configFilePtr)
 
 	if err != nil {
 		return err
@@ -68,6 +88,12 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 	if err != nil {
 		return err
 	}
+
+	config.Version = strconv.Itoa(GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(GetRandomInt(1, 99))
+	config.WalletName += "." + config.Version
+	config.Seed = strings.Replace(uuid.New().String(), "-", "", -1)
 
 	// Print config data
 	if config.Debug == true {

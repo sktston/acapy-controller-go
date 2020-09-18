@@ -1,8 +1,11 @@
 {
-  "WebHookPort"    : ":8022",
-  "AdminURL"       : "http://localhost:8021",
-  "HttpTimeout"    : 30,
-  "EnableRevoke"   : false,
-  "GenerateQR"     : true,
-  "Debug"          : false
+  "AgentApiUrl"        : "http://localhost:8021",
+  "AdminWalletName"    : "admin",
+  "WalletName"         : "faber",
+  "IssuerWebhookUrl"   : "http://localhost:8022/webhooks",
+  "VerifierWebhookUrl" : "http://localhost:8032/webhooks",
+  "SupportRevoke"      : false,
+  "RevokeAfterIssue"   : false,
+  "GenerateQR"         : true,
+  "Debug"              : false
 }

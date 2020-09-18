@@ -1,6 +1,6 @@
 /**************************************************
- * Author  : Jihyuck Yun                          *
- *           dr.jhyun@gmail.com                   *
+ * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
+ *           Baegjae Sung (baegjae@gmail.com)     *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -16,6 +16,7 @@ import (
 	"github.com/tidwall/sjson"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -39,8 +40,13 @@ func main() {
 	// Set up http router
 	router := setupHttpRouter()
 
+	// Get port from WebhookUrl
+	urlParse, _ := url.Parse(config.HolderWebhookUrl)
+	_, port, _ := net.SplitHostPort(urlParse.Host)
+	port = ":" + port
+
 	// Start http server
-	listener, err := net.Listen("tcp", config.WebHookPort)
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -55,7 +61,7 @@ func main() {
 			log.Fatal(err.Error())
 		}
 	}()
-	log.Info("Listen on http://" + utils.GetOutboundIP().String() + config.WebHookPort)
+	log.Info("Listen on http://" + utils.GetOutboundIP().String() + port)
 
 	// Initialize Alice
 	err = initializeAfterStartup()
@@ -95,32 +101,33 @@ func setupHttpRouter() *gin.Engine {
 func initializeAfterStartup() error {
 	log.Info("initializeAfterStartup >>> start")
 
-	err := receiveInvitation()
+	log.Info("Create wallet and did, and register webhook url")
+	err := createWalletAndDid()
+	if err != nil {
+		log.Error("createWalletAndDid() error:", err.Error())
+		return err
+	}
+
+	err = registerWebhookUrl()
+	if err != nil {
+		log.Error("registerWebhookUrl() error:", err.Error())
+		return err
+	}
+
+	log.Info("Configuration of alice:")
+	log.Info("- wallet name: " + config.WalletName)
+	log.Info("- seed: " + config.Seed)
+	log.Info("- did: " + config.Did)
+	log.Info("- verification key: " + config.VerKey)
+	log.Info("- webhook url: " + config.HolderWebhookUrl)
+
+	log.Info("Receive invitation from faber controller")
+	err = receiveInvitation()
 	if err != nil {
 		return err
 	}
 
 	log.Info("initializeAfterStartup <<< done")
-	return nil
-}
-
-func receiveInvitation() error {
-	log.Info("receiveInvitation >>> start")
-
-	inviteAsBytes, err := utils.RequestGet(config.FaberContURL, "/invitation", config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestGet() error", err.Error())
-		return err
-	}
-	log.Info("invitation:" + string(inviteAsBytes))
-
-	_, err = utils.RequestPost(config.AdminURL, "/connections/receive-invitation", inviteAsBytes, config.HttpTimeout)
-	if err != nil {
-		log.Error("utils.RequestPost() error", err.Error())
-		return err
-	}
-
-	log.Info("receiveInvitation <<< done")
 	return nil
 }
 
@@ -138,7 +145,11 @@ func handleMessage(ctx *gin.Context) {
 	}
 
 	topic = ctx.Param("topic")
-	state = body["state"].(string)
+	if topic == "problem_report" {
+		state = ""
+	} else {
+		state = body["state"].(string)
+	}
 
 	switch topic {
 	case "connections":
@@ -154,7 +165,7 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else {
-				log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
+			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
 
 	case "present_proof":
@@ -173,9 +184,12 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else if state == "presentation_acked" {
-			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> Alice exits")
-			// Alice exit
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> deleteWalletAndExit")
+			err = deleteWalletAndExit()
+			if err != nil {
+				utils.HttpError(ctx, http.StatusInternalServerError, err)
+				return
+			}
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -184,6 +198,15 @@ func handleMessage(ctx *gin.Context) {
 		log.Info("- Case (topic:" + topic + ", state:" + state + ") -> Print message")
 		log.Info("  - message:" + body["content"].(string))
 
+	case "problem_report":
+		bodyAsBytes, err := json.MarshalIndent(body, "", "  ")
+		if err != nil {
+			utils.HttpError(ctx, http.StatusInternalServerError, err)
+			return
+		}
+		log.Warn("- Case (topic:" + topic + ") -> Print body")
+		log.Warn("  - body:" + string(bodyAsBytes))
+
 	default:
 		log.Warn("- Warning Unexpected topic:" + topic)
 	}
@@ -191,10 +214,91 @@ func handleMessage(ctx *gin.Context) {
 	return
 }
 
+func createWalletAndDid() error {
+	log.Info("createWalletAndDid >>> start")
+
+	body := utils.PrettyJson(`{
+		"name": "`+config.WalletName+`",
+		"key": "`+config.WalletName+".key"+`",
+		"type": "indy"
+	}`, "")
+
+	log.Info("Create a new wallet:" + utils.PrettyJson(body))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", config.AdminWalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+
+	body = utils.PrettyJson(`{
+		"seed": "`+config.Seed+`"
+	}`, "")
+
+	log.Info("Create a new local did:" + utils.PrettyJson(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", config.WalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+
+	config.Did = gjson.Get(string(respAsBytes), "result.did").String()
+	if config.Did == "" {
+		return fmt.Errorf("Did does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+	}
+
+	config.VerKey = gjson.Get(string(respAsBytes), "result.verkey").String()
+	if config.VerKey == "" {
+		return fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+	}
+	log.Info("created did: " + config.Did + ", verkey: " + config.VerKey)
+
+	log.Info("createWalletAndDid <<< done")
+	return nil
+}
+
+func registerWebhookUrl() error {
+	log.Info("registerWebhookUrl >>> start")
+
+	body := utils.PrettyJson(`{
+		"target_url": "`+config.HolderWebhookUrl+`"
+	}`, "")
+
+	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", config.WalletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
+
+	log.Info("registerWebhookUrl <<< done")
+	return nil
+}
+
+func receiveInvitation() error {
+	log.Info("receiveInvitation >>> start")
+
+	inviteAsBytes, err := utils.RequestGet(config.FaberContURL, "/invitation", "")
+	if err != nil {
+		log.Error("utils.RequestGet() error", err.Error())
+		return err
+	}
+	log.Info("invitation:" + string(inviteAsBytes))
+
+	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", config.WalletName, inviteAsBytes)
+	if err != nil {
+		log.Error("utils.RequestPost() error", err.Error())
+		return err
+	}
+
+	log.Info("receiveInvitation <<< done")
+	return nil
+}
+
 func sendCredentialRequest(credExID string) error {
 	log.Info("sendCredentialRequest >>> start")
 
-	_, err := utils.RequestPost(config.AdminURL, "/issue-credential/records/"+ credExID + "/send-request", []byte("{}"), config.HttpTimeout)
+	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", config.WalletName, []byte("{}"))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -212,7 +316,7 @@ func sendProof(reqBody string) error {
 		return fmt.Errorf("presExID does not exist\nreqBody: %s: ", reqBody)
 	}
 
-	credsAsBytes, err :=  utils.RequestGet(config.AdminURL, "/present-proof/records/" + presExID + "/credentials", config.HttpTimeout)
+	credsAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/present-proof/records/"+presExID+"/credentials", config.WalletName)
 	if err != nil {
 		log.Error("utils.RequestGET() error:", err.Error())
 		return err
@@ -224,12 +328,12 @@ func sendProof(reqBody string) error {
 
 	var (
 		maxRevID uint64 = 0
-		maxIndex = 0
+		maxIndex        = 0
 	)
 
 	// Find maxRevID and corresponding index
 	for idx, credRevID := range credRevIDs {
-		if  credRevID.Uint() > maxRevID {
+		if credRevID.Uint() > maxRevID {
 			maxRevID = credRevID.Uint()
 			maxIndex = idx
 		}
@@ -238,7 +342,7 @@ func sendProof(reqBody string) error {
 	// Get array element that has max RevID
 	credRevID := credRevIDs[maxIndex].String()
 	credID := credIDs[maxIndex].String()
-	log.Info("Use latest credential in demo - credRevId:" + credRevID + ", credId:"+ credID)
+	log.Info("Use latest credential in demo - credRevId:" + credRevID + ", credId:" + credID)
 
 	// Make body using presentation_request
 	var (
@@ -247,28 +351,41 @@ func sendProof(reqBody string) error {
 
 	reqAttrs := gjson.Get(reqBody, "presentation_request.requested_attributes").Map()
 	for key := range reqAttrs {
-		newReqAttrs, _ = sjson.Set(newReqAttrs, key + ".cred_id", credID)
-		newReqAttrs, _ = sjson.Set(newReqAttrs, key + ".revealed", true)
+		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".cred_id", credID)
+		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".revealed", true)
 	}
 
 	reqPreds := gjson.Get(reqBody, "presentation_request.requested_predicates").Map()
 	for key := range reqPreds {
-		newReqPreds, _ = sjson.Set(newReqPreds, key + ".cred_id", credID)
+		newReqPreds, _ = sjson.Set(newReqPreds, key+".cred_id", credID)
 	}
 
 	body := utils.PrettyJson(`{
-		"requested_attributes": ` + newReqAttrs + `,
-		"requested_predicates": ` + newReqPreds + `,
+		"requested_attributes": `+newReqAttrs+`,
+		"requested_predicates": `+newReqPreds+`,
 		"self_attested_attributes": {}
 	}`, "")
 
-	_, err = utils.RequestPost(config.AdminURL, "/present-proof/records/"+ presExID + "/send-presentation", []byte(body), config.HttpTimeout)
+	_, err = utils.RequestPost(config.AgentApiUrl, "/present-proof/records/"+presExID+"/send-presentation", config.WalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
 
-
 	log.Info("sendProof <<< done")
+	return nil
+}
+
+func deleteWalletAndExit() error {
+	// Delete wallet
+	log.Info("Delete my wallet - walletName: " + config.WalletName)
+	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", config.WalletName)
+	if err != nil {
+		log.Error("utils.RequestDelete() error:", err.Error())
+		return err
+	}
+
+	// Alice exit
+	_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 	return nil
 }

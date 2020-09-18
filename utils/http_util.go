@@ -1,6 +1,6 @@
 /**************************************************
- * Author  : Jihyuck Yun                          *
- *           dr.jhyun@gmail.com                   *
+ * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
+ *           Baegjae Sung (baegjae@gmail.com)     *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -22,30 +22,31 @@ import (
 )
 
 var (
-	httpClient = &http.Client{}
+	httpClient                = &http.Client{}
+	HttpTimeout time.Duration = 30		// seconds
 )
 
-func RequestGet(url string, uri string, timeout time.Duration) ([]byte, error) {
-	return httpRequest(http.MethodGet, url, uri, []byte(""), timeout, "Accept:application/json")
+func RequestGet(url string, uri string, wallet string) ([]byte, error) {
+	return httpRequest(http.MethodGet, url, uri, wallet, []byte(""))
 }
 
-func RequestGETByteArray(url string, uri string, timeout time.Duration) ([]byte, error) {
-	return httpRequest(http.MethodGet, url, uri, []byte(""), timeout)
+func RequestPost(url string, uri string, wallet string, body []byte) ([]byte, error) {
+	return httpRequest(http.MethodPost, url, uri, wallet, body, "Content-Type:application/json", "Accept:application/json")
 }
 
-func RequestPost(url string, uri string, body []byte, timeout time.Duration) ([]byte, error) {
-	return httpRequest(http.MethodPost, url, uri, body, timeout, "Content-Type:application/json", "Accept:application/json")
+func RequestDelete(url string, uri string, wallet string, headers ...string) ([]byte, error) {
+	return httpRequest(http.MethodDelete, url, uri, wallet, []byte(""), headers...)
 }
 
-func RequestPatch(url string, uri string, body []byte, timeout time.Duration) ([]byte, error) {
-	return httpRequest(http.MethodPatch, url, uri, body, timeout, "Content-Type:application/json", "Accept:application/json")
+func RequestPatch(url string, uri string, wallet string, body []byte) ([]byte, error) {
+	return httpRequest(http.MethodPatch, url, uri, wallet, body, "Content-Type:application/json", "Accept:application/json")
 }
 
-func RequestPut(url string, uri string, body []byte, timeout time.Duration, headers ...string) ([]byte, error) {
-	return httpRequest(http.MethodPut, url, uri, body, timeout, headers...)
+func RequestPut(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+	return httpRequest(http.MethodPut, url, uri, wallet, body, headers...)
 }
 
-func httpRequest(httpMethod string, url string, uri string, body []byte, timeout time.Duration, headers ...string) ([]byte, error) {
+func httpRequest(httpMethod string, url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
 	httpRequest, err := http.NewRequest(httpMethod, url+uri, bytes.NewBuffer(body))
 
 	if err != nil {
@@ -60,8 +61,11 @@ func httpRequest(httpMethod string, url string, uri string, body []byte, timeout
 		httpRequest.Header.Set(key, value)
 	}
 
+	// Add wallet header
+	httpRequest.Header.Add("wallet", wallet)
+
 	// Set request timeout
-	httpClient.Timeout = timeout * time.Second
+	httpClient.Timeout = HttpTimeout * time.Second
 
 	// Do request
 	httpResp, err := httpClient.Do(httpRequest)
@@ -99,6 +103,8 @@ func httpRequest(httpMethod string, url string, uri string, body []byte, timeout
 }
 
 func HttpError(ctx *gin.Context, status int, err error) {
+	log.Error("HttpError:", err.Error())
+
 	errStruct := gin.H{
 		"Code":    status,
 		"Message": err.Error(),
