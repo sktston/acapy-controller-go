@@ -24,27 +24,30 @@ import (
 
 var (
 	httpClient                = &http.Client{}
-	HttpTimeout time.Duration = 30		// seconds
+	HttpTimeout time.Duration = 30 // seconds
 )
 
-func RequestGet(url string, uri string, wallet string) ([]byte, error) {
-	return httpRequest(http.MethodGet, url, uri, wallet, []byte(""))
+func RequestGet(url string, uri string, wallet string, headers ...string) ([]byte, error) {
+	return httpRequest(http.MethodGet, url, uri, wallet, []byte(""), headers...)
 }
 
-func RequestPost(url string, uri string, wallet string, body []byte) ([]byte, error) {
-	return httpRequest(http.MethodPost, url, uri, wallet, body, "Content-Type:application/json", "Accept:application/json")
+func RequestPost(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+	appendHeaders := append(headers, "Content-Type:application/json")
+	return httpRequest(http.MethodPost, url, uri, wallet, body, appendHeaders...)
 }
 
 func RequestDelete(url string, uri string, wallet string, headers ...string) ([]byte, error) {
 	return httpRequest(http.MethodDelete, url, uri, wallet, []byte(""), headers...)
 }
 
-func RequestPatch(url string, uri string, wallet string, body []byte) ([]byte, error) {
-	return httpRequest(http.MethodPatch, url, uri, wallet, body, "Content-Type:application/json", "Accept:application/json")
+func RequestPatch(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+	appendHeaders := append(headers, "Content-Type:application/json")
+	return httpRequest(http.MethodPatch, url, uri, wallet, body, appendHeaders...)
 }
 
 func RequestPut(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
-	return httpRequest(http.MethodPut, url, uri, wallet, body, headers...)
+	appendHeaders := append(headers, "Content-Type:application/json")
+	return httpRequest(http.MethodPut, url, uri, wallet, body, appendHeaders...)
 }
 
 func httpRequest(httpMethod string, url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
@@ -63,7 +66,9 @@ func httpRequest(httpMethod string, url string, uri string, wallet string, body 
 	}
 
 	// Add wallet header
-	httpRequest.Header.Add("wallet", wallet)
+	if wallet != "" {
+		httpRequest.Header.Add("wallet", wallet)
+	}
 
 	// Set request timeout
 	httpClient.Timeout = HttpTimeout * time.Second
