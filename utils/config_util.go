@@ -34,7 +34,6 @@ type ControllerConfig struct {
 	VerifierWebhookUrl string `json:"VerifierWebhookUrl" validate:"omitempty,url"`
 	SupportRevoke      bool   `json:"SupportRevoke"`
 	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
-	GenerateQR         bool   `json:"GenerateQR"`
 
 	// Alice only from json file
 	HolderWebhookUrl   string `json:"HolderWebhookUrl" validate:"omitempty,url"`

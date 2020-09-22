@@ -6,6 +6,5 @@
   "VerifierWebhookUrl" : "http://host.docker.internal:8032/webhooks",
   "SupportRevoke"      : false,
   "RevokeAfterIssue"   : false,
-  "GenerateQR"         : true,
   "Debug"              : false
 }

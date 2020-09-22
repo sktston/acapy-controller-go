@@ -92,6 +92,7 @@ func setupHttpRouter() *gin.Engine {
 
 	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationURL)
+	router.GET("/invitation-qr", createInvitationURL)
 	router.POST("/webhooks/topic/:topic", handleMessage)
 
 	return router
@@ -186,11 +187,11 @@ func createInvitationURL(ctx *gin.Context) {
 	}
 
 	// Generate QR code
-	if config.GenerateQR {
+	if ctx.FullPath() == "/invitation-qr" {
 		// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
 		qrCode, _ := qrcode.New(invitationURL, qrcode.Low)
 		qrCodeString := qrCode.ToSmallString(false)
-		invitationURL = qrCodeString + "\n" + invitationURL
+		invitationURL = qrCodeString
 	}
 
 	log.Info("createInvitationURL <<< invitationURL:\n" + invitationURL)
