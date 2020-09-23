@@ -11,23 +11,18 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	goLog "github.com/withmandala/go-log"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 )
 
 type ControllerConfig struct {
 	// Common from json file
-	AgentApiUrl     string `json:"AgentApiUrl" validate:"required,url"`
-	AdminWalletName string `json:"AdminWalletName" validate:"required"`
-	WalletName      string `json:"WalletName" validate:"required"`
-	Debug           bool   `json:"Debug"`
+	AgentApiUrl string `json:"AgentApiUrl" validate:"required,url"`
+	Debug       bool   `json:"Debug"`
 
 	// Faber only from json file
 	IssuerWebhookUrl   string `json:"IssuerWebhookUrl" validate:"omitempty,url"`
@@ -36,14 +31,8 @@ type ControllerConfig struct {
 	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
 
 	// Alice only from json file
-	HolderWebhookUrl   string `json:"HolderWebhookUrl" validate:"omitempty,url"`
-	FaberContURL string `json:"FaberContURL" validate:"omitempty,url`
-
-	// Common by assignment
-	Version string
-	Seed    string
-	Did     string
-	VerKey  string
+	HolderWebhookUrl string `json:"HolderWebhookUrl" validate:"omitempty,url"`
+	FaberContURL     string `json:"FaberContURL" validate:"omitempty,url"`
 
 	// Faber only, Command line parameters
 	IssueOnly  bool
@@ -87,12 +76,6 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 	if err != nil {
 		return err
 	}
-
-	config.Version = strconv.Itoa(GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(GetRandomInt(1, 99))
-	config.WalletName += "." + config.Version
-	config.Seed = strings.Replace(uuid.New().String(), "-", "", -1)
 
 	// Print config data
 	if config.Debug == true {

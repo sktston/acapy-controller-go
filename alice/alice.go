@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/sktston/acapy-controller-go/utils"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -19,12 +20,22 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
 var (
-	log    = utils.Log
-	config utils.ControllerConfig
+	log         = utils.Log
+	config      utils.ControllerConfig
+	did, verKey string
+
+	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(utils.GetRandomInt(1, 99))
+	adminWalletName = "admin"
+	walletName      = "alice." + version
+	seed            = strings.Replace(uuid.New().String(), "-", "", -1)
 )
 
 func main() {
@@ -115,10 +126,10 @@ func initializeAfterStartup() error {
 	}
 
 	log.Info("Configuration of alice:")
-	log.Info("- wallet name: " + config.WalletName)
-	log.Info("- seed: " + config.Seed)
-	log.Info("- did: " + config.Did)
-	log.Info("- verification key: " + config.VerKey)
+	log.Info("- wallet name: " + walletName)
+	log.Info("- seed: " + seed)
+	log.Info("- did: " + did)
+	log.Info("- verification key: " + verKey)
 	log.Info("- webhook url: " + config.HolderWebhookUrl)
 
 	log.Info("Receive invitation from faber controller")
@@ -218,39 +229,39 @@ func createWalletAndDid() error {
 	log.Info("createWalletAndDid >>> start")
 
 	body := utils.PrettyJson(`{
-		"name": "`+config.WalletName+`",
-		"key": "`+config.WalletName+".key"+`",
+		"name": "`+walletName+`",
+		"key": "`+walletName+".key"+`",
 		"type": "indy"
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", config.AdminWalletName, []byte(body))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
 
 	body = utils.PrettyJson(`{
-		"seed": "`+config.Seed+`"
+		"seed": "`+seed+`"
 	}`, "")
 
 	log.Info("Create a new local did:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", config.WalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
 
-	config.Did = gjson.Get(string(respAsBytes), "result.did").String()
-	if config.Did == "" {
+	did = gjson.Get(string(respAsBytes), "result.did").String()
+	if did == "" {
 		return fmt.Errorf("Did does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
 
-	config.VerKey = gjson.Get(string(respAsBytes), "result.verkey").String()
-	if config.VerKey == "" {
+	verKey = gjson.Get(string(respAsBytes), "result.verkey").String()
+	if verKey == "" {
 		return fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
-	log.Info("created did: " + config.Did + ", verkey: " + config.VerKey)
+	log.Info("created did: " + did + ", verkey: " + verKey)
 
 	log.Info("createWalletAndDid <<< done")
 	return nil
@@ -264,7 +275,7 @@ func registerWebhookUrl() error {
 	}`, "")
 
 	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", config.WalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -285,7 +296,7 @@ func receiveInvitation() error {
 	}
 	log.Info("invitation:" + string(inviteAsBytes))
 
-	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", config.WalletName, inviteAsBytes)
+	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", walletName, inviteAsBytes)
 	if err != nil {
 		log.Error("utils.RequestPost() error", err.Error())
 		return err
@@ -298,7 +309,7 @@ func receiveInvitation() error {
 func sendCredentialRequest(credExID string) error {
 	log.Info("sendCredentialRequest >>> start")
 
-	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", config.WalletName, []byte("{}"))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", walletName, []byte("{}"))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -316,7 +327,7 @@ func sendProof(reqBody string) error {
 		return fmt.Errorf("presExID does not exist\nreqBody: %s: ", reqBody)
 	}
 
-	credsAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/present-proof/records/"+presExID+"/credentials", config.WalletName)
+	credsAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/present-proof/records/"+presExID+"/credentials", walletName)
 	if err != nil {
 		log.Error("utils.RequestGET() error:", err.Error())
 		return err
@@ -366,7 +377,7 @@ func sendProof(reqBody string) error {
 		"self_attested_attributes": {}
 	}`, "")
 
-	_, err = utils.RequestPost(config.AgentApiUrl, "/present-proof/records/"+presExID+"/send-presentation", config.WalletName, []byte(body))
+	_, err = utils.RequestPost(config.AgentApiUrl, "/present-proof/records/"+presExID+"/send-presentation", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -378,8 +389,8 @@ func sendProof(reqBody string) error {
 
 func deleteWalletAndExit() error {
 	// Delete wallet
-	log.Info("Delete my wallet - walletName: " + config.WalletName)
-	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", config.WalletName)
+	log.Info("Delete my wallet - walletName: " + walletName)
+	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", walletName)
 	if err != nil {
 		log.Error("utils.RequestDelete() error:", err.Error())
 		return err
