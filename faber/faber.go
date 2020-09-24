@@ -327,18 +327,31 @@ func createWalletAndDid() error {
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
+
+	body = utils.PrettyJson(`{
+		"label": "`+walletName+`.label"
+	}`, "")
+
+	log.Info("Update a label of the wallet:" + utils.PrettyJson(body))
+	respAsBytes, err = utils.RequestPut(config.AgentApiUrl, "/wallet/me", walletName, []byte(body))
+	if err != nil {
+		log.Error("utils.RequestPost() error:", err.Error())
+		return err
+	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
 	body = utils.PrettyJson(`{
 		"seed": "`+seed+`"
 	}`, "")
 
 	log.Info("Create a new local did:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", walletName, []byte(body))
+	respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -365,7 +378,8 @@ func registerDidAsIssuer() error {
 	params := "?did=" + did +
 		"&verkey=" + verKey +
 		"&alias=" + walletName +
-		"&role=ENDORSER"
+		"&role=ENDORSER" +
+		"&target_wallet=" + walletName
 
 	log.Info("Register the did to the ledger as a ENDORSER")
 
@@ -375,6 +389,7 @@ func registerDidAsIssuer() error {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
 	params = "?did=" + did
 	log.Info("Assign the did to public: " + did)

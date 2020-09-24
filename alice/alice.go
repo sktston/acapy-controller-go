@@ -52,7 +52,7 @@ func main() {
 	router := setupHttpRouter()
 
 	// Get port from WebhookUrl
-	urlParse, _ := url.Parse(config.HolderWebhookUrl)
+	urlParse, _ := url.Parse(config.WebhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -130,7 +130,7 @@ func initializeAfterStartup() error {
 	log.Info("- seed: " + seed)
 	log.Info("- did: " + did)
 	log.Info("- verification key: " + verKey)
-	log.Info("- webhook url: " + config.HolderWebhookUrl)
+	log.Info("- webhook url: " + config.WebhookUrl)
 
 	log.Info("Receive invitation from faber controller")
 	err = receiveInvitation()
@@ -271,7 +271,7 @@ func registerWebhookUrl() error {
 	log.Info("registerWebhookUrl >>> start")
 
 	body := utils.PrettyJson(`{
-		"target_url": "`+config.HolderWebhookUrl+`"
+		"target_url": "`+config.WebhookUrl+`"
 	}`, "")
 
 	log.Info("Create a new webhook target:" + utils.PrettyJson(body))

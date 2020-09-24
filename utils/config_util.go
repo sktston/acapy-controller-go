@@ -31,7 +31,7 @@ type ControllerConfig struct {
 	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
 
 	// Alice only from json file
-	HolderWebhookUrl string `json:"HolderWebhookUrl" validate:"omitempty,url"`
+	WebhookUrl string `json:"WebhookUrl" validate:"omitempty,url"`
 	FaberContURL     string `json:"FaberContURL" validate:"omitempty,url"`
 
 	// Faber only, Command line parameters
