@@ -20,40 +20,38 @@ Repository structure details:
 ---
 
 ## Steps to run demo
-### Run Cloud Agents (Faber and Alice)
-- Faber agent opens 8020 port (endpoint) and 8021 port (admin). 
-Check admin (swagger API) http://localhost:8021
-- Alice agent opens 8030 port (endpoint) and 8031 port (admin). 
-Check admin http://localhost:8031
+### Run cloud agency with multitenancy support
+- ACA-Py agency opens 8020 port (endpoint) and 8021 port (admin). 
+Check admin (swagger API) http://localhost:8021/api/doc
 - Refer to [java implementation](https://github.com/sktston/acapy-controller-java)
 ```
 mkdir ~/work
 cd ~/work
 git pull https://github.com/sktston/acapy-controller-java.git
 cd ~/work/acapy-controller-java/docker
-docker-compose up
+docker-compose up --build
 ```
 
-### Run Faber Controller
-- Faber controller opens 8022 port. 
-- It receives webhook message from faber agent by POST http://localhost:8022/webhooks/topic/{topic}/ 
+### Run Faber controller
+- Faber controller opens 8022 port.
+- It receives webhook message from Faber agent by POST http://host.docker.internal:8022/webhooks/topic/{topic}/ 
 - Also, It presents invitation by GET http://localhost:8022/invitation
 - Detailed configuration is in [faber-config.json](./faber/faber-config.json)
 ```
-cd ~/work 
+mkdir ~/work
+cd ~/work
 git pull https://github.com/sktston/acapy-controller-go.git
 cd ~/work/acapy-controller-go/faber
 go build
 ./faber
 ```
 
-### Run Alice Controller
-- Alice controller opens 8032 port. 
-- It receives webhook message from alice agent by POST http://localhost:8032/webhooks/topic/{topic}/ 
+### Run Alice controller
+- Alice controller opens 8023 port. 
+- It receives webhook message from alice agent by POST http://host.docker.internal:8023/webhooks/topic/{topic}/ 
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
 - Detailed configuration is in [alice-config.json](./alice/alice-config.json)
 ```
-cd ~/work 
 cd ~/work/acapy-controller-go/alice
 go build
 ./alice
