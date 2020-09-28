@@ -27,7 +27,7 @@ Check admin (swagger API) http://localhost:8021/api/doc
 ```
 mkdir ~/work
 cd ~/work
-git pull https://github.com/sktston/acapy-controller-java.git
+git clone https://github.com/sktston/acapy-controller-java.git
 cd ~/work/acapy-controller-java/docker
 docker-compose up --build
 ```
@@ -40,7 +40,7 @@ docker-compose up --build
 ```
 mkdir ~/work
 cd ~/work
-git pull https://github.com/sktston/acapy-controller-go.git
+git clone https://github.com/sktston/acapy-controller-go.git
 cd ~/work/acapy-controller-go/faber
 go build
 ./faber
