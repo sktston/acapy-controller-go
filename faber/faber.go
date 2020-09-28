@@ -34,6 +34,7 @@ var (
 		strconv.Itoa(utils.GetRandomInt(1, 99))
 	adminWalletName = "admin"
 	walletName = "faber." + version
+	imageUrl = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 	seed = strings.Replace(uuid.New().String(), "-", "", -1)
 )
 
@@ -100,8 +101,8 @@ func setupHttpRouter() *gin.Engine {
 	router.Use(gin.Logger())
 
 	router.GET("/invitation", createInvitation)
-	router.GET("/invitation-url", createInvitationURL)
-	router.GET("/invitation-qr", createInvitationURL)
+	router.GET("/invitation-url", createInvitationUrlQr)
+	router.GET("/invitation-qr", createInvitationUrlQr)
 	router.POST("/webhooks/topic/:topic", handleMessage)
 
 	return router
@@ -180,7 +181,7 @@ func createInvitation(ctx *gin.Context) {
 	return
 }
 
-func createInvitationURL(ctx *gin.Context) {
+func createInvitationUrlQr(ctx *gin.Context) {
 	log.Info("createInvitationUrl >>> start")
 
 	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation", walletName, []byte("{}"))
@@ -335,7 +336,8 @@ func createWalletAndDid() error {
 	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
 	body = utils.PrettyJson(`{
-		"label": "`+walletName+`.label"
+		"label": "`+walletName+`.label",
+		"image_url":"`+imageUrl+`"
 	}`, "")
 
 	log.Info("Update a label of the wallet:" + utils.PrettyJson(body))
