@@ -1,7 +1,8 @@
 {
   "AgentApiUrl"      : "http://localhost:8021",
   "AdminWalletName"  : "admin",
-  "WebhookUrl"       : "http://host.docker.internal:8023/webhooks",
-  "FaberContURL"     : "http://localhost:8022",
+  "HolderWebhookUrl" : "http://host.docker.internal:8023/webhooks",
+  "IssuerContURL"    : "http://localhost:8022",
+  "VerifierContURL"  : "http://localhost:8022",
   "Debug"            : false
 }

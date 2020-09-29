@@ -27,7 +27,7 @@ import (
 var (
 	log                             = utils.Log
 	config                          utils.ControllerConfig
-	webhookUrl, did, verKey, schemaID, credDefID string
+	HolderWebhookUrl, did, verKey, schemaID, credDefID string
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
@@ -51,16 +51,16 @@ func main() {
 	// Set up http router
 	router := setupHttpRouter()
 
-	// Get port from WebhookUrl
+	// Get port from HolderWebhookUrl
 	if config.IssueOnly == true {
-		webhookUrl = config.IssuerWebhookUrl
+		HolderWebhookUrl = config.IssuerWebhookUrl
 	} else if config.VerifyOnly == true {
-		webhookUrl = config.VerifierWebhookUrl
+		HolderWebhookUrl = config.VerifierWebhookUrl
 	} else {
-		webhookUrl = config.IssuerWebhookUrl
+		HolderWebhookUrl = config.IssuerWebhookUrl
 	}
 
-	urlParse, _ := url.Parse(webhookUrl)
+	urlParse, _ := url.Parse(HolderWebhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -124,9 +124,9 @@ func initializeAfterStartup() error {
 		}
 	}
 
-	err = registerWebhookUrl()
+	err = registerHolderWebhookUrl()
 	if err != nil {
-		log.Error("registerWebhookUrl() error:", err.Error())
+		log.Error("registerHolderWebhookUrl() error:", err.Error())
 		return err
 	}
 
@@ -150,7 +150,7 @@ func initializeAfterStartup() error {
 	log.Info("- seed: " + seed)
 	log.Info("- did: " + did)
 	log.Info("- verification key: " + verKey)
-	log.Info("- webhook url: " + webhookUrl)
+	log.Info("- webhook url: " + HolderWebhookUrl)
 	log.Info("- schema ID: " + schemaID)
 	log.Info("- credential definition ID: " + credDefID)
 
@@ -407,11 +407,11 @@ func registerDidAsIssuer() error {
 	return nil
 }
 
-func registerWebhookUrl() error {
-	log.Info("registerWebhookUrl >>> start")
+func registerHolderWebhookUrl() error {
+	log.Info("registerHolderWebhookUrl >>> start")
 
 	body := utils.PrettyJson(`{
-		"target_url": "`+webhookUrl+`"
+		"target_url": "`+HolderWebhookUrl+`"
 	}`, "")
 
 	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
@@ -422,7 +422,7 @@ func registerWebhookUrl() error {
 	}
 	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
-	log.Info("registerWebhookUrl <<< done")
+	log.Info("registerHolderWebhookUrl <<< done")
 	return nil
 }
 

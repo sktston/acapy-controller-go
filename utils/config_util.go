@@ -27,12 +27,13 @@ type ControllerConfig struct {
 	// Faber only from json file
 	IssuerWebhookUrl   string `json:"IssuerWebhookUrl" validate:"omitempty,url"`
 	VerifierWebhookUrl string `json:"VerifierWebhookUrl" validate:"omitempty,url"`
-	SupportRevoke      bool   `json:"SupportRevoke"`
-	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
+	SupportRevoke            bool   `json:"SupportRevoke"`
+	RevokeAfterIssue         bool   `json:"RevokeAfterIssue"`
 
 	// Alice only from json file
-	WebhookUrl string `json:"WebhookUrl" validate:"omitempty,url"`
-	FaberContURL     string `json:"FaberContURL" validate:"omitempty,url"`
+	HolderWebhookUrl string `json:"HolderWebhookUrl" validate:"omitempty,url"`
+	IssuerContURL    string `json:"IssuerContURL" validate:"omitempty,url"`
+	VerifierContURL  string `json:"VerifierContURL" validate:"omitempty,url"`
 
 	// Faber only, Command line parameters
 	IssueOnly  bool

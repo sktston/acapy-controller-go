@@ -1,7 +1,7 @@
 {
   "AgentApiUrl"        : "http://localhost:8021",
   "IssuerWebhookUrl"   : "http://host.docker.internal:8022/webhooks",
-  "VerifierWebhookUrl" : "http://host.docker.internal:8032/webhooks",
+  "VerifierWebhookUrl" : "http://host.docker.internal:8022/webhooks",
   "SupportRevoke"      : false,
   "RevokeAfterIssue"   : false,
   "Debug"              : false

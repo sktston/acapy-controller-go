@@ -25,11 +25,11 @@ Repository structure details:
 Check admin (swagger API) http://localhost:8021/api/doc
 - Refer to [java implementation](https://github.com/sktston/acapy-controller-java)
 ```
-mkdir ~/work
-cd ~/work
-git clone https://github.com/sktston/acapy-controller-java.git
-cd ~/work/acapy-controller-java/docker
-docker-compose up --build
+$ mkdir ~/work
+$ cd ~/work
+$ git clone https://github.com/sktston/acapy-controller-java.git
+$ cd ~/work/acapy-controller-java/docker
+$ docker-compose up --build
 ```
 
 ### Run Faber controller
@@ -38,12 +38,12 @@ docker-compose up --build
 - Also, It presents invitation by GET http://localhost:8022/invitation
 - Detailed configuration is in [faber-config.json](./faber/faber-config.json)
 ```
-mkdir ~/work
-cd ~/work
-git clone https://github.com/sktston/acapy-controller-go.git
-cd ~/work/acapy-controller-go/faber
-go build
-./faber
+$ mkdir ~/work
+$ cd ~/work
+$ git clone https://github.com/sktston/acapy-controller-go.git
+$ cd ~/work/acapy-controller-go/faber
+$ go build
+$ ./faber
 ```
 
 ### Run Alice controller
@@ -52,7 +52,25 @@ go build
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
 - Detailed configuration is in [alice-config.json](./alice/alice-config.json)
 ```
-cd ~/work/acapy-controller-go/alice
-go build
-./alice
+$ cd ~/work/acapy-controller-go/alice
+$ go build
+$ ./alice
+```
+### Separation of issuer and verifier
+- In the above example, Faber executes issuer and verifier at the same time. However, in the real environment, issuer and verifier are separated.
+- When executing Faber, you can specify whether to play only the issuer role or the verifier role with the '-i' option and the '-v' option.
+- Set *IssuerWebhookUrl (ex: http://172.168.0.100:8022/webhooks)* and *VerifierWebhookUrl (ex: http://172.168.0.101:8032/webhooks)* of [faber-config.json](./faber/faber-config.json) file, respectively. 
+- Also, set *IssuerContURL (ex: http://172.168.0.100:8022)* and *VerifierContURL (ex: http://172.168.0.101:8032)* of [alice-config.json](./alice/alice-config.json), respectively.
+```
+Terminal 1: Issuer
+$ cd ~/work/acapy-controller-go/faber
+$ ./faber -i
+
+Terminal 2: Verifier
+$ cd ~/work/acapy-controller-go/faber
+$ ./faber -v
+
+Terminal 3: Holder
+$ cd ~/work/acapy-controller-go/alice
+$ ./alice
 ```

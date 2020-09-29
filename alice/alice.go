@@ -51,8 +51,8 @@ func main() {
 	// Set up http router
 	router := setupHttpRouter()
 
-	// Get port from WebhookUrl
-	urlParse, _ := url.Parse(config.WebhookUrl)
+	// Get port from HolderWebhookUrl
+	urlParse, _ := url.Parse(config.HolderWebhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -121,7 +121,7 @@ func initializeAfterStartup() error {
 
 	err = registerWebhookUrl()
 	if err != nil {
-		log.Error("registerWebhookUrl() error:", err.Error())
+		log.Error("registerHolderWebhookUrl() error:", err.Error())
 		return err
 	}
 
@@ -130,10 +130,10 @@ func initializeAfterStartup() error {
 	log.Info("- seed: " + seed)
 	log.Info("- did: " + did)
 	log.Info("- verification key: " + verKey)
-	log.Info("- webhook url: " + config.WebhookUrl)
+	log.Info("- webhook url: " + config.HolderWebhookUrl)
 
 	log.Info("Receive invitation from faber controller")
-	err = receiveInvitation()
+	err = receiveInvitation(config.IssuerContURL)
 	if err != nil {
 		return err
 	}
@@ -175,6 +175,16 @@ func handleMessage(ctx *gin.Context) {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
 			}
+		} else if state == "credential_acked" {
+			if config.IssuerContURL != config.VerifierContURL {
+				log.Info("- Case (topic:" + topic + ", state:" + state + ") -> receiveInvitation")
+				err = receiveInvitation(config.VerifierContURL)
+				if err != nil {
+					utils.HttpError(ctx, http.StatusInternalServerError, err)
+					return
+				}
+			}
+
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -268,10 +278,10 @@ func createWalletAndDid() error {
 }
 
 func registerWebhookUrl() error {
-	log.Info("registerWebhookUrl >>> start")
+	log.Info("registerHolderWebhookUrl >>> start")
 
 	body := utils.PrettyJson(`{
-		"target_url": "`+config.WebhookUrl+`"
+		"target_url": "`+config.HolderWebhookUrl+`"
 	}`, "")
 
 	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
@@ -282,14 +292,14 @@ func registerWebhookUrl() error {
 	}
 	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
-	log.Info("registerWebhookUrl <<< done")
+	log.Info("registerHolderWebhookUrl <<< done")
 	return nil
 }
 
-func receiveInvitation() error {
+func receiveInvitation(contURL string) error {
 	log.Info("receiveInvitation >>> start")
 
-	inviteAsBytes, err := utils.RequestGet(config.FaberContURL, "/invitation", "")
+	inviteAsBytes, err := utils.RequestGet(contURL, "/invitation", "")
 	if err != nil {
 		log.Error("utils.RequestGet() error", err.Error())
 		return err
