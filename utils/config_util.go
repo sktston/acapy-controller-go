@@ -38,6 +38,10 @@ type ControllerConfig struct {
 	// Faber only, Command line parameters
 	IssueOnly  bool
 	VerifyOnly bool
+
+	// Alice only, Command line parameters
+	NumHolders uint64	`validate:"required,gte=1"`
+	NumCycles uint64	`validate:"required,gtefield=NumHolders"`
 }
 
 var (
@@ -49,9 +53,11 @@ var (
 func (config *ControllerConfig) ReadConfig(fileName string) error {
 	var (
 		app           = kingpin.New(os.Args[0], "Faber controller")
-		configFilePtr = app.Flag("config-file", "Config json file").Short('c').PlaceHolder("CONFIG_FILE").Default(fileName).File()
+		configFilePtr = app.Flag("config-file", "Config json file").Short('f').PlaceHolder("CONFIG_FILE").Default(fileName).File()
 		issueOnlyPtr  = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
 		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
+		numHoldersPtr = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
+		numCyclesPtr = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
 	)
 
 	app.Version(appVersion)
@@ -60,6 +66,12 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 
 	config.IssueOnly = *issueOnlyPtr
 	config.VerifyOnly = *verifyOnlyPtr
+
+	config.NumHolders = *numHoldersPtr
+	config.NumCycles = *numCyclesPtr
+	if config.NumCycles < config.NumHolders {
+		config.NumCycles = config.NumHolders
+	}
 
 	jsonData, err := ioutil.ReadAll(*configFilePtr)
 
