@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,7 +36,7 @@ var (
 	adminWalletName = "admin"
 	walletName      = "faber." + version
 	imageUrl        = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	seed            = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {
@@ -48,8 +49,33 @@ func main() {
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
 
+	// Start web hook server
+	httpServer, err := startWebHookServer()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer func() { _ = shutdownWebHookServer(httpServer) }()
+
+	// Start Faber
+	err = initializeAfterStartup()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	log.Info("Waiting web hook event from agent...")
+	select {}
+}
+
+func startWebHookServer() (*http.Server, error) {
 	// Set up http router
-	router := setupHttpRouter()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(gin.Logger())
+
+	router.GET("/invitation", createInvitation)
+	router.GET("/invitation-url", createInvitationUrlQr)
+	router.GET("/invitation-qr", createInvitationUrlQr)
+	router.POST("/webhooks/topic/:topic", handleMessage)
 
 	// Get port from webhookUrl
 	if config.IssueOnly == true {
@@ -83,29 +109,18 @@ func main() {
 	}()
 	log.Info("Listen on http://" + utils.GetOutboundIP().String() + port)
 
-	// Initialize Faber
-	err = initializeAfterStartup()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	log.Info("Waiting web hook event from agent...")
-	select {}
-
-	return
+	return httpServer, nil
 }
 
-func setupHttpRouter() *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
+func shutdownWebHookServer(httpServer *http.Server) error {
+	// Shutdown http server gracefully
+	err := httpServer.Shutdown(context.Background())
+	if err != nil {
+		return err
+	}
+	log.Info("Http server shutdown successfully")
 
-	router.GET("/invitation", createInvitation)
-	router.GET("/invitation-url", createInvitationUrlQr)
-	router.GET("/invitation-qr", createInvitationUrlQr)
-	router.POST("/webhooks/topic/:topic", handleMessage)
-
-	return router
+	return nil
 }
 
 func initializeAfterStartup() error {
@@ -122,12 +137,6 @@ func initializeAfterStartup() error {
 			log.Error("registerDidAsIssuer() error:", err.Error())
 			return err
 		}
-	}
-
-	err = registerWebhookUrl()
-	if err != nil {
-		log.Error("registerWebhookUrl() error:", err.Error())
-		return err
 	}
 
 	if config.VerifyOnly == false {
@@ -324,24 +333,14 @@ func createWalletAndDid() error {
 	body := utils.PrettyJson(`{
 		"name": "`+walletName+`",
 		"key": "`+walletName+".key"+`",
-		"type": "indy"
+		"type": "indy",
+		"label": "`+walletName+".label"+`",
+		"image_url": "`+imageUrl+`",
+		"webhook_urls": ["`+webhookUrl+`"]
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
 	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
-	if err != nil {
-		log.Error("utils.RequestPost() error:", err.Error())
-		return err
-	}
-	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
-
-	body = utils.PrettyJson(`{
-		"label": "`+walletName+`.label",
-		"image_url":"`+imageUrl+`"
-	}`, "")
-
-	log.Info("Update a label of the wallet:" + utils.PrettyJson(body))
-	respAsBytes, err = utils.RequestPut(config.AgentApiUrl, "/wallet/me", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -404,25 +403,6 @@ func registerDidAsIssuer() error {
 	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
 	log.Info("registerDidAsIssuer <<< done")
-	return nil
-}
-
-func registerWebhookUrl() error {
-	log.Info("registerWebhookUrl >>> start")
-
-	body := utils.PrettyJson(`{
-		"target_url": "`+webhookUrl+`"
-	}`, "")
-
-	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", walletName, []byte(body))
-	if err != nil {
-		log.Error("utils.RequestPost() error:", err.Error())
-		return err
-	}
-	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
-
-	log.Info("registerWebhookUrl <<< done")
 	return nil
 }
 

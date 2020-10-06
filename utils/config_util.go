@@ -27,8 +27,8 @@ type ControllerConfig struct {
 	// Faber only from json file
 	IssuerWebhookUrl   string `json:"IssuerWebhookUrl" validate:"omitempty,url"`
 	VerifierWebhookUrl string `json:"VerifierWebhookUrl" validate:"omitempty,url"`
-	SupportRevoke            bool   `json:"SupportRevoke"`
-	RevokeAfterIssue         bool   `json:"RevokeAfterIssue"`
+	SupportRevoke      bool   `json:"SupportRevoke"`
+	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
 
 	// Alice only from json file
 	HolderWebhookUrl string `json:"HolderWebhookUrl" validate:"omitempty,url"`
@@ -40,8 +40,8 @@ type ControllerConfig struct {
 	VerifyOnly bool
 
 	// Alice only, Command line parameters
-	NumHolders uint64	`validate:"required,gte=1"`
-	NumCycles uint64	`validate:"required,gtefield=NumHolders"`
+	NumHolders uint64 `validate:"required,gte=1"`
+	NumCycles  uint64 `validate:"required,gtefield=NumHolders"`
 }
 
 var (
@@ -57,7 +57,7 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 		issueOnlyPtr  = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
 		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
 		numHoldersPtr = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
-		numCyclesPtr = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
+		numCyclesPtr  = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
 	)
 
 	app.Version(appVersion)
@@ -119,7 +119,7 @@ func GetOutboundIP() net.IP {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 

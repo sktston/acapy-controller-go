@@ -35,7 +35,8 @@ var (
 		strconv.Itoa(utils.GetRandomInt(1, 99))
 	adminWalletName = "admin"
 	walletName      = "alice." + version
-	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	imageUrl        = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
+	seed            = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {
@@ -48,8 +49,39 @@ func main() {
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
 
+	// Start web hook server
+	httpServer, err := startWebHookServer()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	// Start Alice
+	err = initializeAfterStartup()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	// Set exit signal
+	exitSignal := make(chan os.Signal)
+	signal.Notify(exitSignal, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	log.Info("Waiting web hook event from agent...")
+
+	// Wait exit signal
+	<-exitSignal
+	_ = shutdownWebHookServer(httpServer)
+	close(exitSignal)
+
+	return
+}
+
+func startWebHookServer() (*http.Server, error) {
 	// Set up http router
-	router := setupHttpRouter()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(gin.Logger())
+
+	router.POST("/webhooks/topic/:topic", handleMessage)
 
 	// Get port from HolderWebhookUrl
 	urlParse, _ := url.Parse(config.HolderWebhookUrl)
@@ -74,39 +106,18 @@ func main() {
 	}()
 	log.Info("Listen on http://" + utils.GetOutboundIP().String() + port)
 
-	// Initialize Alice
-	err = initializeAfterStartup()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	// Set exit signal
-	exit := make(chan os.Signal)
-	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	log.Info("Waiting web hook event from agent...")
-	select {
-	case <-exit:
-		// Shutdown http server gracefully
-		err = httpServer.Shutdown(context.Background())
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		log.Info("Process exits successfully")
-	}
-	close(exit)
-
-	return
+	return httpServer, nil
 }
 
-func setupHttpRouter() *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
+func shutdownWebHookServer(httpServer *http.Server) error {
+	// Shutdown http server gracefully
+	err := httpServer.Shutdown(context.Background())
+	if err != nil {
+		return err
+	}
+	log.Info("Http server shutdown successfully")
 
-	router.POST("/webhooks/topic/:topic", handleMessage)
-
-	return router
+	return nil
 }
 
 func initializeAfterStartup() error {
@@ -116,12 +127,6 @@ func initializeAfterStartup() error {
 	err := createWalletAndDid()
 	if err != nil {
 		log.Error("createWalletAndDid() error:", err.Error())
-		return err
-	}
-
-	err = registerWebhookUrl()
-	if err != nil {
-		log.Error("registerHolderWebhookUrl() error:", err.Error())
 		return err
 	}
 
@@ -241,22 +246,26 @@ func createWalletAndDid() error {
 	body := utils.PrettyJson(`{
 		"name": "`+walletName+`",
 		"key": "`+walletName+".key"+`",
-		"type": "indy"
+		"type": "indy",
+		"label": "`+walletName+".label"+`",
+		"image_url": "`+imageUrl+`",
+		"webhook_urls": ["`+config.HolderWebhookUrl+`"]
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
+	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
 	body = utils.PrettyJson(`{
 		"seed": "`+seed+`"
 	}`, "")
 
 	log.Info("Create a new local did:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", walletName, []byte(body))
+	respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -274,25 +283,6 @@ func createWalletAndDid() error {
 	log.Info("created did: " + did + ", verkey: " + verKey)
 
 	log.Info("createWalletAndDid <<< done")
-	return nil
-}
-
-func registerWebhookUrl() error {
-	log.Info("registerHolderWebhookUrl >>> start")
-
-	body := utils.PrettyJson(`{
-		"target_url": "`+config.HolderWebhookUrl+`"
-	}`, "")
-
-	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", walletName, []byte(body))
-	if err != nil {
-		log.Error("utils.RequestPost() error:", err.Error())
-		return err
-	}
-	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
-
-	log.Info("registerHolderWebhookUrl <<< done")
 	return nil
 }
 
@@ -406,7 +396,7 @@ func deleteWalletAndExit() error {
 		return err
 	}
 
-	// Alice exit
+	// Send exit signal
 	_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 	return nil
 }
