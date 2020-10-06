@@ -25,17 +25,17 @@ import (
 )
 
 var (
-	log                             = utils.Log
-	config                          utils.ControllerConfig
-	HolderWebhookUrl, did, verKey, schemaID, credDefID string
+	log                                          = utils.Log
+	config                                       utils.ControllerConfig
+	webhookUrl, did, verKey, schemaID, credDefID string
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
 	adminWalletName = "admin"
-	walletName = "faber." + version
-	imageUrl = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-	seed = strings.Replace(uuid.New().String(), "-", "", -1)
+	walletName      = "faber." + version
+	imageUrl        = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
+	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {
@@ -51,16 +51,16 @@ func main() {
 	// Set up http router
 	router := setupHttpRouter()
 
-	// Get port from HolderWebhookUrl
+	// Get port from webhookUrl
 	if config.IssueOnly == true {
-		HolderWebhookUrl = config.IssuerWebhookUrl
+		webhookUrl = config.IssuerWebhookUrl
 	} else if config.VerifyOnly == true {
-		HolderWebhookUrl = config.VerifierWebhookUrl
+		webhookUrl = config.VerifierWebhookUrl
 	} else {
-		HolderWebhookUrl = config.IssuerWebhookUrl
+		webhookUrl = config.IssuerWebhookUrl
 	}
 
-	urlParse, _ := url.Parse(HolderWebhookUrl)
+	urlParse, _ := url.Parse(webhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -124,9 +124,9 @@ func initializeAfterStartup() error {
 		}
 	}
 
-	err = registerHolderWebhookUrl()
+	err = registerWebhookUrl()
 	if err != nil {
-		log.Error("registerHolderWebhookUrl() error:", err.Error())
+		log.Error("registerWebhookUrl() error:", err.Error())
 		return err
 	}
 
@@ -150,7 +150,7 @@ func initializeAfterStartup() error {
 	log.Info("- seed: " + seed)
 	log.Info("- did: " + did)
 	log.Info("- verification key: " + verKey)
-	log.Info("- webhook url: " + HolderWebhookUrl)
+	log.Info("- webhook url: " + webhookUrl)
 	log.Info("- schema ID: " + schemaID)
 	log.Info("- credential definition ID: " + credDefID)
 
@@ -407,11 +407,11 @@ func registerDidAsIssuer() error {
 	return nil
 }
 
-func registerHolderWebhookUrl() error {
-	log.Info("registerHolderWebhookUrl >>> start")
+func registerWebhookUrl() error {
+	log.Info("registerWebhookUrl >>> start")
 
 	body := utils.PrettyJson(`{
-		"target_url": "`+HolderWebhookUrl+`"
+		"target_url": "`+webhookUrl+`"
 	}`, "")
 
 	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
@@ -422,7 +422,7 @@ func registerHolderWebhookUrl() error {
 	}
 	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
-	log.Info("registerHolderWebhookUrl <<< done")
+	log.Info("registerWebhookUrl <<< done")
 	return nil
 }
 

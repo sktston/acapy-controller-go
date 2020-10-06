@@ -95,8 +95,11 @@ func httpRequest(httpMethod string, url string, uri string, wallet string, body 
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode > 299 {
 		log.Error(PrettyJson(`{
+				"httpMethod": "`+httpMethod+`",
+				"url+uri": "`+url+uri+`",
+				"wallet": "`+wallet+`",
 				"StatusCode": `+strconv.Itoa(httpResp.StatusCode)+`,
-				"Body": "`+string(respBodyAsBytes)+`"
+				"RespBody": "`+string(respBodyAsBytes)+`"
 			}`, "  "))
 		httpError := http.StatusText(httpResp.StatusCode)
 		return respBodyAsBytes, errors.New(httpError)

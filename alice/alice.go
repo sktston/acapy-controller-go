@@ -35,7 +35,7 @@ var (
 		strconv.Itoa(utils.GetRandomInt(1, 99))
 	adminWalletName = "admin"
 	walletName      = "alice." + version
-	seed            = strings.Replace(uuid.New().String(), "-", "", -1)
+	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {

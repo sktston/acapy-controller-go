@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-type reportData struct {
+type errorReport struct {
 	holderId string
 	error    error
 }
@@ -40,7 +40,7 @@ var (
 	adminWalletName            = "admin"
 
 	numWorkers, numJobs uint64
-	reportChannel       = make(chan reportData)
+	reportChannel       = make(chan errorReport)
 )
 
 func main() {
@@ -63,8 +63,8 @@ func main() {
 	numJobs = config.NumCycles
 
 	jobs := make(chan uint64, numJobs)
-	results := make(chan bool, numJobs)
-	reports := make(chan reportData, numJobs)
+	resultsOK := make(chan bool, numJobs)
+	errorReports := make(chan errorReport, numJobs)
 
 	// Uses all CPUs
 	fmt.Printf("\n-------   NumCPU   -------\n")
@@ -88,7 +88,7 @@ func main() {
 	go func() {
 		<-ctrlC
 		_ = shutdownWebHookServer(httpServer)
-		printFinalReport(results, reports, startTime)
+		printFinalReport(resultsOK, errorReports, startTime)
 		os.Exit(0)
 	}()
 
@@ -102,7 +102,7 @@ func main() {
 
 	// worker creation
 	for workerId = 1; workerId <= numWorkers; workerId++ {
-		go worker(strconv.FormatUint(workerId, 10), &wg, jobs, results, reports, ctrlC)
+		go worker(workerId, &wg, jobs, resultsOK, errorReports, ctrlC)
 	}
 
 	// Worker pulls job from job channel using range
@@ -112,7 +112,7 @@ func main() {
 	wg.Wait()
 
 	_ = shutdownWebHookServer(httpServer)
-	printFinalReport(results, reports, startTime)
+	printFinalReport(resultsOK, errorReports, startTime)
 	return
 }
 
@@ -150,15 +150,16 @@ func startWebHookServer() (*http.Server, error) {
 	return httpServer, nil
 }
 
-func worker(workerId string, wg *sync.WaitGroup, jobs <-chan uint64, results chan<- bool, errors chan<- reportData, ctrlC chan<- os.Signal) {
+func worker(id uint64, wg *sync.WaitGroup, jobs <-chan uint64, resultsOK chan<- bool, errorReports chan<- errorReport, ctrlC chan<- os.Signal) {
 	var (
-		report reportData
+		report errorReport
+		workerId = strconv.FormatUint(id, 10)
 	)
 
 	for jobId := range jobs {
 		numDone := float64(numJobs - uint64(len(jobs)))
 		percent := numDone * 100.0 / float64(numJobs)
-		numError := len(errors)
+		numError := len(errorReports)
 
 		fmt.Printf("worker %03s processing job %05d (Remain:%5d | Done:%5.1f%% | Err: %5d)\n",
 			workerId, jobId, len(jobs), percent, numError)
@@ -171,22 +172,25 @@ func worker(workerId string, wg *sync.WaitGroup, jobs <-chan uint64, results cha
 		for {
 			report = <-reportChannel
 
+			// Check if the report came to myself
 			if report.holderId == workerId {
 				break
 			} else {
+				// If the report is not for me, sent back to the channel.
 				reportChannel <- report
+				runtime.Gosched()
 			}
 		}
 
 		if report.error != nil {
-			errors <- reportData{holderId: workerId, error: err}
+			errorReports <- errorReport{holderId: workerId, error: err}
 
 			fmt.Printf("[ERROR] workerId: %s, error: %v\n", workerId, err)
 
 			// Generate ctrlC signal to print intermediate result and exit
 			ctrlC <- syscall.SIGTERM
 		} else {
-			results <- true
+			resultsOK <- true
 		}
 
 		// WaitGroup 1 decrease
@@ -195,20 +199,20 @@ func worker(workerId string, wg *sync.WaitGroup, jobs <-chan uint64, results cha
 	return
 }
 
-func printFinalReport(results chan bool, errors chan reportData, startTime time.Time) {
+func printFinalReport(resultsOK chan bool, errorReports chan errorReport, startTime time.Time) {
 	// Close the channel to get all the values using range
-	close(results)
-	close(errors)
+	close(resultsOK)
+	close(errorReports)
 
 	// Generate reports
 	fmt.Printf("\n\n-------   Report   -------\n")
 
 	elapsedTime := time.Since(startTime)
 
-	okIdx := len(results)
+	okIdx := len(resultsOK)
 
 	var failIdx = 1
-	for report := range errors {
+	for report := range errorReports {
 		fmt.Printf("[%5d] holderId: %s, report: %v\n", failIdx, report.holderId, report.error)
 		failIdx++
 	}
@@ -235,14 +239,14 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 }
 
 func initializeAfterStartup(holderId string) error {
-	log.Info("initializeAfterStartup >>> start")
+	log.Info("[" + holderId + "] initializeAfterStartup >>> start")
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
-	seed = strings.Replace(uuid.New().String(), "-", "", -1)
+	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 
-	log.Info("Create wallet and did, and register webhook url")
+	log.Info("[" + holderId + "] Create wallet and did, and register webhook url")
 	err := createWalletAndDid(holderId)
 	if err != nil {
 		log.Error("createWalletAndDid() error:", err.Error())
@@ -255,20 +259,20 @@ func initializeAfterStartup(holderId string) error {
 		return err
 	}
 
-	log.Info("Configuration of alice:")
-	log.Info("- wallet name: " + getWalletName(holderId))
-	log.Info("- seed: " + seed)
-	log.Info("- did: " + did)
-	log.Info("- verification key: " + verKey)
-	log.Info("- webhook url: " + config.HolderWebhookUrl + "/" + holderId)
+	log.Info("[" + holderId + "] Configuration of alice:")
+	log.Info("[" + holderId + "] - wallet name: " + getWalletName(holderId))
+	log.Info("[" + holderId + "] - seed: " + seed)
+	log.Info("[" + holderId + "] - did: " + did)
+	log.Info("[" + holderId + "] - verification key: " + verKey)
+	log.Info("[" + holderId + "] - webhook url: " + config.HolderWebhookUrl + "/" + holderId)
 
-	log.Info("Receive invitation from faber controller")
+	log.Info("[" + holderId + "] Receive invitation from faber controller")
 	err = receiveInvitation(holderId, config.IssuerContURL)
 	if err != nil {
 		return err
 	}
 
-	log.Info("initializeAfterStartup <<< done")
+	log.Info("[" + holderId + "] initializeAfterStartup <<< done")
 	return nil
 }
 
@@ -296,12 +300,12 @@ func handleMessage(ctx *gin.Context) {
 
 	switch topic {
 	case "connections":
-		log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> No action in demo")
+		log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 
 	case "issue_credential":
 		// When credential offer is received, send credential request
 		if state == "offer_received" {
-			log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> sendCredentialRequest")
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> sendCredentialRequest")
 			err = sendCredentialRequest(holderId, body["credential_exchange_id"].(string))
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
@@ -309,7 +313,7 @@ func handleMessage(ctx *gin.Context) {
 			}
 		} else if state == "credential_acked" {
 			if config.IssuerContURL != config.VerifierContURL {
-				log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> receiveInvitation")
+				log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> receiveInvitation")
 				err = receiveInvitation(holderId, config.VerifierContURL)
 				if err != nil {
 					utils.HttpError(ctx, http.StatusInternalServerError, err)
@@ -318,13 +322,13 @@ func handleMessage(ctx *gin.Context) {
 			}
 
 		} else {
-			log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> No action in demo")
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
 
 	case "present_proof":
 		// When proof request is received, send proof(presentation)
 		if state == "request_received" {
-			log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> sendProof")
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> sendProof")
 			bodyAsBytes, err := json.MarshalIndent(body, "", "")
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
@@ -337,19 +341,19 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else if state == "presentation_acked" {
-			log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> deleteWalletAndExit")
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> deleteWalletAndExit")
 			err = deleteWalletAndExit(holderId)
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
 			}
 		} else {
-			log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> No action in demo")
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
 
 	case "basicmessages":
-		log.Info("- Case (Id:" + holderId + ", topic:" + topic + ", state:" + state + ") -> Print message")
-		log.Info("  - message:" + body["content"].(string))
+		log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> Print message")
+		log.Info("[" + holderId + "]   - message:" + body["content"].(string))
 
 	case "problem_report":
 		bodyAsBytes, err := json.MarshalIndent(body, "", "  ")
@@ -357,7 +361,7 @@ func handleMessage(ctx *gin.Context) {
 			utils.HttpError(ctx, http.StatusInternalServerError, err)
 			return
 		}
-		log.Warn("- Case (Id:" + holderId + ", topic:" + topic + ") -> Print body")
+		log.Warn("- Case (topic:" + topic + ") -> Print body")
 		log.Warn("  - body:" + string(bodyAsBytes))
 
 	default:
@@ -368,7 +372,7 @@ func handleMessage(ctx *gin.Context) {
 }
 
 func createWalletAndDid(holderId string) error {
-	log.Info("createWalletAndDid >>> start")
+	log.Info("[" + holderId + "] createWalletAndDid >>> start")
 
 	body := utils.PrettyJson(`{
 		"name": "`+getWalletName(holderId)+`",
@@ -376,7 +380,7 @@ func createWalletAndDid(holderId string) error {
 		"type": "indy"
 	}`, "")
 
-	log.Info("Create a new wallet:" + utils.PrettyJson(body))
+	log.Info("[" + holderId + "] Create a new wallet:" + utils.PrettyJson(body))
 	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
@@ -387,7 +391,7 @@ func createWalletAndDid(holderId string) error {
 		"seed": "`+seed+`"
 	}`, "")
 
-	log.Info("Create a new local did:" + utils.PrettyJson(body))
+	log.Info("[" + holderId + "] Create a new local did:" + utils.PrettyJson(body))
 	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", getWalletName(holderId), []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
@@ -403,40 +407,40 @@ func createWalletAndDid(holderId string) error {
 	if verKey == "" {
 		return fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
-	log.Info("created did: " + did + ", verkey: " + verKey)
+	log.Info("[" + holderId + "] created did: " + did + ", verkey: " + verKey)
 
-	log.Info("createWalletAndDid <<< done")
+	log.Info("[" + holderId + "] createWalletAndDid <<< done")
 	return nil
 }
 
 func registerWebhookUrl(holderId string) error {
-	log.Info("registerHolderWebhookUrl >>> start")
+	log.Info("[" + holderId + "] registerHolderWebhookUrl >>> start")
 
 	body := utils.PrettyJson(`{
-		"target_url": "`+config.HolderWebhookUrl + "/" + holderId+`"
+		"target_url": "`+config.HolderWebhookUrl+"/"+holderId+`"
 	}`, "")
 
-	log.Info("Create a new webhook target:" + utils.PrettyJson(body))
+	log.Info("[" + holderId + "] Create a new webhook target:" + utils.PrettyJson(body))
 	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/webhooks", getWalletName(holderId), []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
 	}
-	log.Info("response: " + utils.PrettyJson(string(respAsBytes), "  "))
+	log.Info("[" + holderId + "] response: " + utils.PrettyJson(string(respAsBytes), "  "))
 
-	log.Info("registerHolderWebhookUrl <<< done")
+	log.Info("[" + holderId + "] registerHolderWebhookUrl <<< done")
 	return nil
 }
 
 func receiveInvitation(holderId string, contURL string) error {
-	log.Info("receiveInvitation >>> start")
+	log.Info("[" + holderId + "] receiveInvitation >>> start")
 
 	inviteAsBytes, err := utils.RequestGet(contURL, "/invitation", "")
 	if err != nil {
 		log.Error("utils.RequestGet() error", err.Error())
 		return err
 	}
-	log.Info("invitation:" + string(inviteAsBytes))
+	log.Info("[" + holderId + "] invitation:" + string(inviteAsBytes))
 
 	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", getWalletName(holderId), inviteAsBytes)
 	if err != nil {
@@ -444,12 +448,12 @@ func receiveInvitation(holderId string, contURL string) error {
 		return err
 	}
 
-	log.Info("receiveInvitation <<< done")
+	log.Info("[" + holderId + "] receiveInvitation <<< done")
 	return nil
 }
 
 func sendCredentialRequest(holderId string, credExID string) error {
-	log.Info("sendCredentialRequest >>> start")
+	log.Info("[" + holderId + "] sendCredentialRequest >>> start")
 
 	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", getWalletName(holderId), []byte("{}"))
 	if err != nil {
@@ -457,12 +461,12 @@ func sendCredentialRequest(holderId string, credExID string) error {
 		return err
 	}
 
-	log.Info("sendCredentialRequest <<< done")
+	log.Info("[" + holderId + "] sendCredentialRequest <<< done")
 	return nil
 }
 
 func sendProof(holderId string, reqBody string) error {
-	log.Info("sendProof >>> start")
+	log.Info("[" + holderId + "] sendProof >>> start")
 
 	presExID := gjson.Get(reqBody, "presentation_exchange_id").String()
 	if presExID == "" {
@@ -495,7 +499,7 @@ func sendProof(holderId string, reqBody string) error {
 	// Get array element that has max RevID
 	credRevID := credRevIDs[maxIndex].String()
 	credID := credIDs[maxIndex].String()
-	log.Info("Use latest credential in demo - credRevId:" + credRevID + ", credId:" + credID)
+	log.Info("[" + holderId + "] Use latest credential in demo - credRevId:" + credRevID + ", credId:" + credID)
 
 	// Make body using presentation_request
 	var (
@@ -525,13 +529,13 @@ func sendProof(holderId string, reqBody string) error {
 		return err
 	}
 
-	log.Info("sendProof <<< done")
+	log.Info("[" + holderId + "] sendProof <<< done")
 	return nil
 }
 
 func deleteWalletAndExit(holderId string) error {
 	// Delete wallet
-	log.Info("Delete my wallet - walletName: " + getWalletName(holderId))
+	log.Info("[" + holderId + "] Delete my wallet - walletName: " + getWalletName(holderId))
 	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", getWalletName(holderId))
 	if err != nil {
 		log.Error("utils.RequestDelete() error:", err.Error())
@@ -548,7 +552,7 @@ func getWalletName(holderId string) string {
 }
 
 func sendReportToChannel(holderId string, err error) {
-	reportChannel <- reportData{holderId: holderId, error: err}
+	reportChannel <- errorReport{holderId: holderId, error: err}
 	return
 }
 
