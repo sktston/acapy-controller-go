@@ -210,12 +210,15 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else if state == "presentation_acked" {
-			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> deleteWalletAndExit")
-			err = deleteWalletAndExit()
+			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> deleteWallet & Exit")
+			err = deleteWallet()
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
 			}
+
+			// Send exit signal
+			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -387,7 +390,7 @@ func sendProof(reqBody string) error {
 	return nil
 }
 
-func deleteWalletAndExit() error {
+func deleteWallet() error {
 	// Delete wallet
 	log.Info("Delete my wallet - walletName: " + walletName)
 	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", walletName)
@@ -395,8 +398,5 @@ func deleteWalletAndExit() error {
 		log.Error("utils.RequestDelete() error:", err.Error())
 		return err
 	}
-
-	// Send exit signal
-	_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 	return nil
 }

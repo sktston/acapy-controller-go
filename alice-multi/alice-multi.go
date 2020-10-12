@@ -38,7 +38,9 @@ var (
 	config                     utils.ControllerConfig
 	did, verKey, version, seed string
 	adminWalletName            = "admin"
-	workDoneSignal             = make(chan workDone)
+	workDoneSignal             = make(chan workDone, 1)
+	report                     = utils.NewReport()
+	startTime                  = utils.NewStartTime()
 )
 
 func main() {
@@ -57,8 +59,11 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	jobs := make(chan uint64, config.NumCycles)
-	workDones := make(chan workDone, config.NumCycles)
+	var (
+		wg                sync.WaitGroup
+		holderId, cycleId uint64
+		cycleIdPool       = make(chan uint64, config.NumCycles)
+	)
 
 	// Uses all CPUs
 	fmt.Printf("\n-------   NumCPU   -------\n")
@@ -67,46 +72,35 @@ func main() {
 
 	fmt.Printf("\n-------   Working start   -------\n")
 
-	startTime := time.Now()
-
-	var (
-		wg              sync.WaitGroup
-		workerId, jobId uint64
-	)
-
-	// Press Ctrl-C or'kill pid' in the shell to output intermediate results and exit
+	// Press Ctrl-C or 'kill pid' in the shell to output intermediate results and exit
 	exitSignal := make(chan os.Signal, 1)
-	defer close(exitSignal)
 	signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-exitSignal
 		_ = shutdownWebHookServer(httpServer)
-		printFinalReport(workDones, startTime)
+		report.Print()
 		os.Exit(0)
 	}()
 
-	// Put all jobs to be performed in the job channel
-	for jobId = 1; jobId <= config.NumCycles; jobId++ {
-		jobs <- jobId
+	// Put all cycleId to be performed in the cycleIdPool
+	for cycleId = 1; cycleId <= config.NumCycles; cycleId++ {
+		cycleIdPool <- cycleId
 
-		// WaitGroup 1 increases, each worker decreases by 1 at the end of the job
+		// WaitGroup 1 increases, each executeHolder() decreases by 1
 		wg.Add(1)
 	}
 
-	// worker creation
-	for workerId = 1; workerId <= config.NumHolders; workerId++ {
-		go worker(workerId, &wg, jobs, workDones)
+	// Execute holders
+	for holderId = 1; holderId <= config.NumHolders; holderId++ {
+		go executeHolder(holderId, &wg, cycleIdPool)
 	}
 
-	// Worker pulls job from job channel using range
-	close(jobs)
-
-	// Wait until all jobs are executed
+	// Wait until all cycleId are executed
 	wg.Wait()
 
 	_ = shutdownWebHookServer(httpServer)
-	printFinalReport(workDones, startTime)
+	report.Print()
 	return
 }
 
@@ -155,31 +149,27 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 	return nil
 }
 
-func worker(id uint64, wg *sync.WaitGroup, jobs <-chan uint64, workDones chan<- workDone) {
+func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 	var (
 		doneResult workDone
-		workerId   = strconv.FormatUint(id, 10)
+		holderId   = strconv.FormatUint(id, 10)
 	)
 
-	for jobId := range jobs {
-		numDone := float64(config.NumCycles - uint64(len(jobs)))
+	for cycleId := range cycleIdPool {
+		numDone := float64(config.NumCycles - uint64(len(cycleIdPool)))
 		percent := numDone * 100.0 / float64(config.NumCycles)
 
-		fmt.Printf("worker %03s processing job %05d (Remain:%5d | Done:%5.1f%%)\n",
-			workerId, jobId, len(jobs), percent)
+		fmt.Printf("Holder %03s processing cycleId %05d (Remain:%5d | Done:%5.1f%%)\n",
+			holderId, cycleId, len(cycleIdPool), percent)
 
 		// Start Alice
-		err := initializeAfterStartup(workerId)
-		if err != nil {
-			sendWorkDoneSignal(workerId, err)
-		}
+		initializeAfterStartup(holderId)
 
 		for {
-			// workDoneSignal occurs in deleteWalletAndExit() or in error
 			doneResult = <-workDoneSignal
 
 			// Check if the result came to myself
-			if doneResult.holderId == workerId {
+			if doneResult.holderId == holderId {
 				break
 			} else {
 				// If the result is not for me, sent back to the channel.
@@ -188,52 +178,24 @@ func worker(id uint64, wg *sync.WaitGroup, jobs <-chan uint64, workDones chan<- 
 			}
 		}
 
-		workDones <- doneResult
 		if doneResult.error != nil {
-			fmt.Printf("[ERROR] workerId: %s, error: %v\n", workerId, err)
+			fmt.Printf("[ERROR] holderId: %s, error: %v\n", holderId, doneResult.error)
 			// Generate kill signal to print intermediate result and exit
 			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 		}
 
-		// WaitGroup 1 decrease
-		wg.Done()
-	}
-	return
-}
-
-func printFinalReport(workDones chan workDone, startTime time.Time) {
-	// Close the channel to get all the values using range
-	close(workDones)
-
-	// Generate reports
-	fmt.Printf("\n\n-------   Report   -------\n")
-
-	elapsedTime := time.Since(startTime)
-
-	var (
-		okIdx   = 0
-		failIdx = 0
-	)
-	for report := range workDones {
-		if report.error != nil {
-			fmt.Printf("[%5d] holderId: %s, report: %v\n", failIdx, report.holderId, report.error)
-			failIdx++
+		if config.Infinite == false {
+			// WaitGroup 1 decrease
+			wg.Done()
 		} else {
-			okIdx++
+			// Put the retrieved cycleId back into cycleIdPool
+			cycleIdPool <- cycleId
 		}
 	}
-
-	fmt.Printf("NUM_WORKERS: %d\n", config.NumHolders)
-	fmt.Printf("NUM_JOBS: %d\n", config.NumCycles)
-	fmt.Printf("  SUCCESS JOBS: %d\n", okIdx)
-	fmt.Printf("  FAILURE JOBS: %d\n\n", failIdx)
-
-	fmt.Printf("DURATION: %s\n", fmtDuration(elapsedTime))
-	fmt.Printf("TPS: %.3f\n\n", float64(config.NumCycles)/elapsedTime.Seconds())
 	return
 }
 
-func initializeAfterStartup(holderId string) error {
+func initializeAfterStartup(holderId string) {
 	log.Info("[" + holderId + "] initializeAfterStartup >>> start")
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
@@ -245,7 +207,8 @@ func initializeAfterStartup(holderId string) error {
 	err := createWalletAndDid(holderId)
 	if err != nil {
 		log.Error("createWalletAndDid() error:", err.Error())
-		return err
+		sendWorkDoneSignal(holderId, err)
+		return
 	}
 
 	log.Info("[" + holderId + "] Configuration of alice:")
@@ -258,11 +221,12 @@ func initializeAfterStartup(holderId string) error {
 	log.Info("[" + holderId + "] Receive invitation from faber controller")
 	err = receiveInvitation(holderId, config.IssuerContURL)
 	if err != nil {
-		return err
+		sendWorkDoneSignal(holderId, err)
+		return
 	}
 
 	log.Info("[" + holderId + "] initializeAfterStartup <<< done")
-	return nil
+	return
 }
 
 func handleMessage(ctx *gin.Context) {
@@ -289,12 +253,19 @@ func handleMessage(ctx *gin.Context) {
 
 	switch topic {
 	case "connections":
+		if state == "request" {
+			startTime.SetStartTime(holderId, utils.ConnectPhase)
+		} else if state == "active" {
+			startTime := startTime.GetStartTime(holderId, utils.ConnectPhase)
+			report.AddRecord(holderId, utils.ConnectPhase, startTime, time.Now())
+		}
 		log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 
 	case "issue_credential":
 		// When credential offer is received, send credential request
 		if state == "offer_received" {
 			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> sendCredentialRequest")
+			startTime.SetStartTime(holderId, utils.IssuePhase)
 			err = sendCredentialRequest(holderId, body["credential_exchange_id"].(string))
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
@@ -302,6 +273,9 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else if state == "credential_acked" {
+			startTime := startTime.GetStartTime(holderId, utils.IssuePhase)
+			report.AddRecord(holderId, utils.IssuePhase, startTime, time.Now())
+
 			if config.IssuerContURL != config.VerifierContURL {
 				log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> receiveInvitation")
 				err = receiveInvitation(holderId, config.VerifierContURL)
@@ -311,7 +285,6 @@ func handleMessage(ctx *gin.Context) {
 					return
 				}
 			}
-
 		} else {
 			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -327,6 +300,7 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 
+			startTime.SetStartTime(holderId, utils.VerifyPhase)
 			err = sendProof(holderId, string(bodyAsBytes))
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
@@ -334,13 +308,19 @@ func handleMessage(ctx *gin.Context) {
 				return
 			}
 		} else if state == "presentation_acked" {
-			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> deleteWalletAndExit")
-			err = deleteWalletAndExit(holderId)
+			startTime := startTime.GetStartTime(holderId, utils.VerifyPhase)
+			report.AddRecord(holderId, utils.VerifyPhase, startTime, time.Now())
+
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> deleteWallet & Exit")
+			err = deleteWallet(holderId)
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				sendWorkDoneSignal(holderId, err)
 				return
 			}
+
+			// Alice ends successfully
+			sendWorkDoneSignal(holderId, nil)
 		} else {
 			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -512,7 +492,7 @@ func sendProof(holderId string, reqBody string) error {
 	return nil
 }
 
-func deleteWalletAndExit(holderId string) error {
+func deleteWallet(holderId string) error {
 	// Delete wallet
 	log.Info("[" + holderId + "] Delete my wallet - walletName: " + getWalletName(holderId))
 	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", getWalletName(holderId))
@@ -521,8 +501,6 @@ func deleteWalletAndExit(holderId string) error {
 		return err
 	}
 
-	// Alice exit
-	sendWorkDoneSignal(holderId, nil)
 	return nil
 }
 
@@ -534,12 +512,4 @@ func sendWorkDoneSignal(holderId string, err error) {
 	// Workers are waiting for workDoneSignal
 	workDoneSignal <- workDone{holderId: holderId, error: err}
 	return
-}
-
-func fmtDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	m := d / time.Minute
-	d -= m * time.Minute
-	s := d / time.Second
-	return fmt.Sprintf("%02dm:%02ds", m, s)
 }

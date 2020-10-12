@@ -40,8 +40,10 @@ type ControllerConfig struct {
 	VerifyOnly bool
 
 	// Alice only, Command line parameters
-	NumHolders uint64 `validate:"required,gte=1"`
-	NumCycles  uint64 `validate:"required,gtefield=NumHolders"`
+	NumHolders  uint64 `validate:"required,gte=1"`
+	NumCycles   uint64 `validate:"required,gtefield=NumHolders"`
+	VerifyRatio uint64 `validate:"required,gte=1"`
+	Infinite    bool
 }
 
 var (
@@ -52,12 +54,14 @@ var (
 
 func (config *ControllerConfig) ReadConfig(fileName string) error {
 	var (
-		app           = kingpin.New(os.Args[0], "Faber controller")
-		configFilePtr = app.Flag("config-file", "Config json file").Short('f').PlaceHolder("CONFIG_FILE").Default(fileName).File()
-		issueOnlyPtr  = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
-		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
-		numHoldersPtr = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
-		numCyclesPtr  = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
+		app            = kingpin.New(os.Args[0], "Faber controller")
+		configFilePtr  = app.Flag("config-file", "Config json file").PlaceHolder("CONFIG_FILE").Default(fileName).File()
+		issueOnlyPtr   = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
+		verifyOnlyPtr  = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
+		numHoldersPtr  = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
+		numCyclesPtr   = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
+		verifyRatioPtr = app.Flag("verify-ratio", "Verify ratio by onboard and issue ->  verify / (onboard & issue)").Short('r').Default("1").Uint64()
+		infinitePtr    = app.Flag("infinite", "If specified, run infinitely ").Short('f').Bool()
 	)
 
 	app.Version(appVersion)
@@ -72,6 +76,8 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 	if config.NumCycles < config.NumHolders {
 		config.NumCycles = config.NumHolders
 	}
+	config.VerifyRatio = *verifyRatioPtr
+	config.Infinite = *infinitePtr
 
 	jsonData, err := ioutil.ReadAll(*configFilePtr)
 
