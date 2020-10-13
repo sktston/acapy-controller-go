@@ -41,7 +41,7 @@ var (
 
 func main() {
 	// Read faber-config.yaml file
-	err := config.ReadConfig("./faber-config.json", "issuer")
+	err := config.ReadConfig("./faber-config.json", "issuer-verifier")
 	if err != nil {
 		log.Fatal(err.Error())
 	}

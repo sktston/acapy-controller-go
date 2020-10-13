@@ -57,18 +57,15 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 	var (
 		app                                         *kingpin.Application
 		configFilePtr                               **os.File
-		issueOnlyPtr, verifyOnlyPtr                 *bool
+		issueOnlyPtr, verifyOnlyPtr, infinitePtr    *bool
 		numHoldersPtr, numCyclesPtr, verifyRatioPtr *uint64
-		infinitePtr                                 *bool
 	)
 
 	app = kingpin.New(os.Args[0], "ACA-Py controller")
 	configFilePtr = app.Flag("config-file", "Config json file").PlaceHolder("CONFIG_FILE").Default(fileName).File()
 
 	switch controllerType {
-	case "issuer":
-		fallthrough
-	case "verifier":
+	case "issuer-verifier":
 		issueOnlyPtr = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
 		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
 
@@ -100,15 +97,16 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 		config.NumCycles = *numCyclesPtr
 	}
 
-	if config.NumCycles < config.NumHolders {
-		config.NumCycles = config.NumHolders
-	}
-
 	if verifyRatioPtr != nil {
 		config.VerifyRatio = *verifyRatioPtr
 	}
 	if infinitePtr != nil {
 		config.Infinite = *infinitePtr
+	}
+
+	// Adjust NumCycles
+	if config.NumCycles < config.NumHolders * config.VerifyRatio {
+		config.NumCycles = config.NumHolders * config.VerifyRatio
 	}
 
 	jsonData, err := ioutil.ReadAll(*configFilePtr)

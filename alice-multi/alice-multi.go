@@ -151,8 +151,10 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 
 func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 	var (
-		doneResult workDone
-		holderId   = strconv.FormatUint(id, 10)
+		doneResult  workDone
+		holderId    = strconv.FormatUint(id, 10)
+		verifyRatio = config.VerifyRatio
+		err         error
 	)
 
 	for cycleId := range cycleIdPool {
@@ -162,9 +164,22 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 		fmt.Printf("Holder %03s processing cycleId %05d (Remain:%5d | Done:%5.1f%%)\n",
 			holderId, cycleId, len(cycleIdPool), percent)
 
-		// Start Alice
-		initializeAfterStartup(holderId)
+		if verifyRatio == config.VerifyRatio {
+			// Make wallet and did
+			initializeAfterStartup(holderId)
 
+			log.Info("[" + holderId + "] Receive invitation from issuer controller")
+			err = receiveInvitation(holderId, config.IssuerContURL)
+		} else {
+			log.Info("[" + holderId + "] Receive invitation from verifier controller")
+			err = receiveInvitation(holderId, config.VerifierContURL)
+		}
+
+		if err != nil {
+			sendWorkDoneSignal(holderId, err)
+		}
+
+		// Wait signal from handleMessage()
 		for {
 			doneResult = <-workDoneSignal
 
@@ -179,9 +194,17 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 		}
 
 		if doneResult.error != nil {
-			fmt.Printf("[ERROR] holderId: %s, error: %v\n", holderId, doneResult.error)
-			// Generate kill signal to print intermediate result and exit
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+			exit(holderId, doneResult.error)
+		}
+
+		verifyRatio -= 1
+		if verifyRatio == 0 {
+			verifyRatio = config.VerifyRatio
+
+			err = deleteWallet(holderId)
+			if err != nil {
+				exit(holderId, err)
+			}
 		}
 
 		if config.Infinite == false {
@@ -217,13 +240,6 @@ func initializeAfterStartup(holderId string) {
 	log.Info("[" + holderId + "] - did: " + did)
 	log.Info("[" + holderId + "] - verification key: " + verKey)
 	log.Info("[" + holderId + "] - webhook url: " + config.HolderWebhookUrl + "/" + holderId)
-
-	log.Info("[" + holderId + "] Receive invitation from faber controller")
-	err = receiveInvitation(holderId, config.IssuerContURL)
-	if err != nil {
-		sendWorkDoneSignal(holderId, err)
-		return
-	}
 
 	log.Info("[" + holderId + "] initializeAfterStartup <<< done")
 	return
@@ -311,14 +327,7 @@ func handleMessage(ctx *gin.Context) {
 			startTime := startTime.GetStartTime(holderId, utils.VerifyPhase)
 			report.AddRecord(holderId, utils.VerifyPhase, startTime, time.Now())
 
-			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> deleteWallet & Exit")
-			err = deleteWallet(holderId)
-			if err != nil {
-				utils.HttpError(ctx, http.StatusInternalServerError, err)
-				sendWorkDoneSignal(holderId, err)
-				return
-			}
-
+			log.Info("[" + holderId + "] - Case (topic:" + topic + ", state:" + state + ") -> Exit")
 			// Alice ends successfully
 			sendWorkDoneSignal(holderId, nil)
 		} else {
@@ -511,5 +520,12 @@ func getWalletName(holderId string) string {
 func sendWorkDoneSignal(holderId string, err error) {
 	// Workers are waiting for workDoneSignal
 	workDoneSignal <- workDone{holderId: holderId, error: err}
+	return
+}
+
+func exit(holderId string, err error) {
+	fmt.Printf("[ERROR] holderId: %s, error: %v\n", holderId, err)
+	// Generate kill signal to print intermediate result and exit
+	_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 	return
 }
