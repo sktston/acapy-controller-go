@@ -1,3 +1,9 @@
+/**************************************************
+ * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
+ *           Baegjae Sung (baegjae@gmail.com)     *
+ * since October 12, 2020                         *
+ **************************************************/
+
 package utils
 
 import (
@@ -10,6 +16,9 @@ import (
 
 type Phase uint64
 
+/**************************************************
+ * StartTime type implementation                  *
+ **************************************************/
 type StartTime struct {
 	stime map[string]map[Phase]time.Time // time[holderId][phase] returns stored start time
 	mutex sync.RWMutex
@@ -51,6 +60,9 @@ func (st *StartTime) GetStartTime(holderId string, phase Phase) time.Time {
 	return startTime
 }
 
+/**************************************************
+ * Record type implementation                     *
+ **************************************************/
 type Record struct {
 	holderId  string
 	phase     Phase
@@ -138,21 +150,27 @@ func (rpt *Report) Print() {
 		fmt.Printf("\n*** Transaction time (sec) ***\n")
 		fmt.Printf("Min %.1f Max %.1f\n", analysis.transMin, analysis.transMax)
 		fmt.Printf("Median %.1f  Variance %.2f\n", analysis.transMedian, analysis.transVariance)
+		fmt.Printf("Percentile[95%%, 99%%]=[%.1f, %.1f]\n", analysis.transPercentile95, analysis.transPercentile99)
 		fmt.Printf("------------------------------------\n")
 	}
 
 }
 
+/**************************************************
+ * PhaseAnalysis type implementation              *
+ **************************************************/
 type PhaseAnalysis struct {
 	phase             Phase
 	duration          time.Duration
 	numTrans          uint64
 	transPerSec       float64
 	transPerMinute    float64
-	transMin          float64	// sec
-	transMax          float64	// sec
-	transMedian       float64	// sec
-	transVariance     float64	// sec
+	transMin          float64 // sec
+	transMax          float64 // sec
+	transMedian       float64 // sec
+	transVariance     float64 // sec
+	transPercentile95 float64 // sec
+	transPercentile99 float64 // sec
 }
 
 func NewPhaseAnalysis(records []Record, phase Phase) *PhaseAnalysis {
@@ -160,35 +178,33 @@ func NewPhaseAnalysis(records []Record, phase Phase) *PhaseAnalysis {
 		return records[i].startTime.Before(records[j].startTime)
 	})
 
-	startMin := records[0].startTime
+	startTimeMin := records[0].startTime
 
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].endTime.After(records[j].endTime)
 	})
 
-	endMax := records[0].endTime
+	endTimeMax := records[0].endTime
 
-	duration := endMax.Sub(startMin)
+	duration := endTimeMax.Sub(startTimeMin)
 	numTrans := uint64(len(records))
 
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].duration < records[j].duration
-	})
-
-	transMinAsSec := records[0].duration.Seconds()
-	transMaxAsSec := records[len(records)-1].duration.Seconds()
-
+	// Get statistics data
 	var (
-		durationsAsSec []float64
+		durationsAsSec stats.Float64Data // []float64
 	)
 
-	// Get duration as seconds
+	// Get duration slice as seconds
 	for _, rcd := range records {
 		durationsAsSec = append(durationsAsSec, rcd.duration.Seconds())
 	}
 
-	medianAsSec, _ := stats.Median(durationsAsSec)
-	varianceAsSec, _ := stats.Variance(durationsAsSec)
+	transMinAsSec, _ := stats.Min(durationsAsSec)
+	transMaxAsSec, _ := stats.Max(durationsAsSec)
+	transMedianAsSec, _ := stats.Median(durationsAsSec)
+	transVarianceAsSec, _ := stats.Variance(durationsAsSec)
+	transPercentile95, _ := stats.Percentile(durationsAsSec, 95.0)
+	transPercentile99, _ := stats.Percentile(durationsAsSec, 99.0)
 
 	return &PhaseAnalysis{
 		phase:             phase,
@@ -198,7 +214,9 @@ func NewPhaseAnalysis(records []Record, phase Phase) *PhaseAnalysis {
 		transPerMinute:    float64(numTrans) / duration.Seconds() * 60.0,
 		transMin:          transMinAsSec,
 		transMax:          transMaxAsSec,
-		transMedian:       medianAsSec,
-		transVariance:     varianceAsSec,
+		transMedian:       transMedianAsSec,
+		transVariance:     transVarianceAsSec,
+		transPercentile95: transPercentile95,
+		transPercentile99: transPercentile99,
 	}
 }

@@ -41,7 +41,7 @@ var (
 
 func main() {
 	// Read alice-config.yaml file
-	err := config.ReadConfig("./alice-config.json")
+	err := config.ReadConfig("./alice-config.json", "holder")
 	if err != nil {
 		log.Fatal(err.Error())
 	}

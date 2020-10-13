@@ -8,6 +8,7 @@ package utils
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -40,9 +41,9 @@ type ControllerConfig struct {
 	VerifyOnly bool
 
 	// Alice only, Command line parameters
-	NumHolders  uint64 `validate:"required,gte=1"`
-	NumCycles   uint64 `validate:"required,gtefield=NumHolders"`
-	VerifyRatio uint64 `validate:"required,gte=1"`
+	NumHolders  uint64 `validate:"omitempty,gte=1"`
+	NumCycles   uint64 `validate:"omitempty,gtefield=NumHolders"`
+	VerifyRatio uint64 `validate:"omitempty,gte=1"`
 	Infinite    bool
 }
 
@@ -52,32 +53,63 @@ var (
 	log        = Log
 )
 
-func (config *ControllerConfig) ReadConfig(fileName string) error {
+func (config *ControllerConfig) ReadConfig(fileName string, controllerType string) error {
 	var (
-		app            = kingpin.New(os.Args[0], "Faber controller")
-		configFilePtr  = app.Flag("config-file", "Config json file").PlaceHolder("CONFIG_FILE").Default(fileName).File()
-		issueOnlyPtr   = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
-		verifyOnlyPtr  = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
-		numHoldersPtr  = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
-		numCyclesPtr   = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
-		verifyRatioPtr = app.Flag("verify-ratio", "Verify ratio by onboard and issue ->  verify / (onboard & issue)").Short('r').Default("1").Uint64()
-		infinitePtr    = app.Flag("infinite", "If specified, run infinitely ").Short('f').Bool()
+		app                                         *kingpin.Application
+		configFilePtr                               **os.File
+		issueOnlyPtr, verifyOnlyPtr                 *bool
+		numHoldersPtr, numCyclesPtr, verifyRatioPtr *uint64
+		infinitePtr                                 *bool
 	)
+
+	app = kingpin.New(os.Args[0], "ACA-Py controller")
+	configFilePtr = app.Flag("config-file", "Config json file").PlaceHolder("CONFIG_FILE").Default(fileName).File()
+
+	switch controllerType {
+	case "issuer":
+		fallthrough
+	case "verifier":
+		issueOnlyPtr = app.Flag("issue-only", "Faber does not perform verify after issue process").Short('i').Bool()
+		verifyOnlyPtr = app.Flag("verify-only", "Faber performs verify without issue process").Short('v').Bool()
+
+	case "holder":
+		numHoldersPtr = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
+		numCyclesPtr = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
+		verifyRatioPtr = app.Flag("verify-ratio", "Verify ratio by onboard and issue ->  verify / (onboard & issue)").Short('r').Default("1").Uint64()
+		infinitePtr = app.Flag("infinite", "If specified, run infinitely ").Short('f').Bool()
+
+	default:
+		return errors.New("undefined controller type")
+	}
 
 	app.Version(appVersion)
 	app.HelpFlag.Short('h')
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	config.IssueOnly = *issueOnlyPtr
-	config.VerifyOnly = *verifyOnlyPtr
+	if issueOnlyPtr != nil {
+		config.IssueOnly = *issueOnlyPtr
+	}
+	if verifyOnlyPtr != nil {
+		config.VerifyOnly = *verifyOnlyPtr
+	}
 
-	config.NumHolders = *numHoldersPtr
-	config.NumCycles = *numCyclesPtr
+	if numHoldersPtr != nil {
+		config.NumHolders = *numHoldersPtr
+	}
+	if numCyclesPtr != nil {
+		config.NumCycles = *numCyclesPtr
+	}
+
 	if config.NumCycles < config.NumHolders {
 		config.NumCycles = config.NumHolders
 	}
-	config.VerifyRatio = *verifyRatioPtr
-	config.Infinite = *infinitePtr
+
+	if verifyRatioPtr != nil {
+		config.VerifyRatio = *verifyRatioPtr
+	}
+	if infinitePtr != nil {
+		config.Infinite = *infinitePtr
+	}
 
 	jsonData, err := ioutil.ReadAll(*configFilePtr)
 
