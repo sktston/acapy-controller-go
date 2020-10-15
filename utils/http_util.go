@@ -24,7 +24,7 @@ import (
 
 var (
 	httpClient                = &http.Client{}
-	HttpTimeout time.Duration = 30 // seconds
+	HttpTimeout time.Duration = 3600 // seconds
 )
 
 func RequestGet(url string, uri string, wallet string, headers ...string) ([]byte, error) {
@@ -132,6 +132,8 @@ func PrettyJson(jsonString string, indent ...string) string {
 		unmarshalData interface{}
 		marshalIndent string
 	)
+
+	jsonString = strings.ReplaceAll(jsonString, "\n", "")
 
 	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/sktston/acapy-controller-go/utils"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,14 +34,16 @@ type workDone struct {
 	error    error
 }
 
+
+
 var (
-	log                        = utils.Log
-	config                     utils.ControllerConfig
-	did, verKey, version, seed string
-	adminWalletName            = "admin"
-	workDoneSignal             = make(chan workDone, 1)
-	report                     = utils.NewReport()
-	startTime                  = utils.NewStartTime()
+	log             = utils.Log
+	config          utils.ControllerConfig
+	adminWalletName = "admin"
+	workDoneSignal  chan workDone
+	report          = utils.NewReport()
+	startTime       = utils.NewStartTime()
+	wallets         = utils.NewWalletPool()
 )
 
 func main() {
@@ -64,6 +67,7 @@ func main() {
 		holderId, cycleId uint64
 		cycleIdPool       = make(chan uint64, config.NumCycles)
 	)
+	workDoneSignal = make(chan workDone, config.NumHolders)
 
 	// Uses all CPUs
 	fmt.Printf("\n-------   NumCPU   -------\n")
@@ -158,6 +162,11 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 	)
 
 	for cycleId := range cycleIdPool {
+		// Next start time
+		nextTime := time.Duration(float64(config.StartInterval) * rand.Float64() * float64(time.Second))
+		log.Info("["+holderId+"] Next start time:", nextTime)
+		time.Sleep(nextTime)
+
 		numDone := float64(config.NumCycles - uint64(len(cycleIdPool)))
 		percent := numDone * 100.0 / float64(config.NumCycles)
 
@@ -165,18 +174,9 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 			holderId, cycleId, len(cycleIdPool), percent)
 
 		if verifyRatio == config.VerifyRatio {
-			// Make wallet and did
-			initializeAfterStartup(holderId)
-
-			log.Info("[" + holderId + "] Receive invitation from issuer controller")
-			err = receiveInvitation(holderId, config.IssuerContURL)
+			initializeAfterStartup(holderId, config.IssuerContURL)
 		} else {
-			log.Info("[" + holderId + "] Receive invitation from verifier controller")
-			err = receiveInvitation(holderId, config.VerifierContURL)
-		}
-
-		if err != nil {
-			sendWorkDoneSignal(holderId, err)
+			initializeAfterStartup(holderId, config.VerifierContURL)
 		}
 
 		// Wait signal from handleMessage()
@@ -201,7 +201,7 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 		if verifyRatio == 0 {
 			verifyRatio = config.VerifyRatio
 
-			err = deleteWallet(holderId)
+			err = wallets.DeleteWallet(holderId, config.AgentApiUrl)
 			if err != nil {
 				exit(holderId, err)
 			}
@@ -218,28 +218,32 @@ func executeHolder(id uint64, wg *sync.WaitGroup, cycleIdPool chan uint64) {
 	return
 }
 
-func initializeAfterStartup(holderId string) {
+func initializeAfterStartup(holderId string, contURL string) {
 	log.Info("[" + holderId + "] initializeAfterStartup >>> start")
 
-	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99))
-	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	if contURL == config.IssuerContURL {
+		log.Info("[" + holderId + "] Create wallet and did, and register webhook url")
+		did, verKey, seed, err := createWalletAndDid(holderId)
+		if err != nil {
+			log.Error("createWalletAndDid() error:", err.Error())
+			sendWorkDoneSignal(holderId, err)
+			return
+		}
 
-	log.Info("[" + holderId + "] Create wallet and did, and register webhook url")
-	err := createWalletAndDid(holderId)
+		log.Info("[" + holderId + "] Configuration of alice:")
+		log.Info("[" + holderId + "] - wallet name: " + wallets.GetWalletName(holderId))
+		log.Info("[" + holderId + "] - seed: " + seed)
+		log.Info("[" + holderId + "] - did: " + did)
+		log.Info("[" + holderId + "] - verification key: " + verKey)
+		log.Info("[" + holderId + "] - webhook url: " + config.HolderWebhookUrl + "/" + holderId)
+	}
+
+	log.Info("[" + holderId + "] Receive invitation from faber controller")
+	err := receiveInvitation(holderId, contURL)
 	if err != nil {
-		log.Error("createWalletAndDid() error:", err.Error())
 		sendWorkDoneSignal(holderId, err)
 		return
 	}
-
-	log.Info("[" + holderId + "] Configuration of alice:")
-	log.Info("[" + holderId + "] - wallet name: " + getWalletName(holderId))
-	log.Info("[" + holderId + "] - seed: " + seed)
-	log.Info("[" + holderId + "] - did: " + did)
-	log.Info("[" + holderId + "] - verification key: " + verKey)
-	log.Info("[" + holderId + "] - webhook url: " + config.HolderWebhookUrl + "/" + holderId)
 
 	log.Info("[" + holderId + "] initializeAfterStartup <<< done")
 	return
@@ -355,49 +359,55 @@ func handleMessage(ctx *gin.Context) {
 	return
 }
 
-func createWalletAndDid(holderId string) error {
+func createWalletAndDid(holderId string) (did string, verKey string, seed string, err error) {
 	log.Info("[" + holderId + "] createWalletAndDid >>> start")
 
+	version := strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(utils.GetRandomInt(1, 99))
+	wallets.SetWalletName(holderId, version)
+
 	body := utils.PrettyJson(`{
-		"name": "`+getWalletName(holderId)+`",
-		"key": "`+getWalletName(holderId)+".key"+`",
+		"name": "`+wallets.GetWalletName(holderId)+`",
+		"key": "`+wallets.GetWalletName(holderId)+".key"+`",
 		"type": "indy",
-		"label": "`+getWalletName(holderId)+".label"+`",
-		"image_url": "`+getWalletName(holderId)+`",
+		"label": "`+wallets.GetWalletName(holderId)+".label"+`",
+		"image_url": "`+wallets.GetWalletName(holderId)+`",
 		"webhook_urls": ["`+config.HolderWebhookUrl+"/"+holderId+`"]
 	}`, "")
 
 	log.Info("[" + holderId + "] Create a new wallet:" + utils.PrettyJson(body))
-	_, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	_, err = utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
-		return err
+		return "", "", "", err
 	}
 
+	seed = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 	body = utils.PrettyJson(`{
 		"seed": "`+seed+`"
 	}`, "")
 
 	log.Info("[" + holderId + "] Create a new local did:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", getWalletName(holderId), []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", wallets.GetWalletName(holderId), []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
-		return err
+		return "", "", "", err
 	}
 
 	did = gjson.Get(string(respAsBytes), "result.did").String()
 	if did == "" {
-		return fmt.Errorf("Did does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+		return "", "", "", fmt.Errorf("Did does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
 
 	verKey = gjson.Get(string(respAsBytes), "result.verkey").String()
 	if verKey == "" {
-		return fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
+		return "", "", "", fmt.Errorf("VerKey does not exist\nrespAsBytes: %s: ", string(respAsBytes))
 	}
 	log.Info("[" + holderId + "] created did: " + did + ", verkey: " + verKey)
 
 	log.Info("[" + holderId + "] createWalletAndDid <<< done")
-	return nil
+	return did, verKey, seed, nil
 }
 
 func receiveInvitation(holderId string, contURL string) error {
@@ -410,7 +420,7 @@ func receiveInvitation(holderId string, contURL string) error {
 	}
 	log.Info("[" + holderId + "] invitation:" + string(inviteAsBytes))
 
-	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", getWalletName(holderId), inviteAsBytes)
+	_, err = utils.RequestPost(config.AgentApiUrl, "/connections/receive-invitation", wallets.GetWalletName(holderId), inviteAsBytes)
 	if err != nil {
 		log.Error("utils.RequestPost() error", err.Error())
 		return err
@@ -423,7 +433,7 @@ func receiveInvitation(holderId string, contURL string) error {
 func sendCredentialRequest(holderId string, credExID string) error {
 	log.Info("[" + holderId + "] sendCredentialRequest >>> start")
 
-	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", getWalletName(holderId), []byte("{}"))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/records/"+credExID+"/send-request", wallets.GetWalletName(holderId), []byte("{}"))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -441,7 +451,7 @@ func sendProof(holderId string, reqBody string) error {
 		return fmt.Errorf("presExID does not exist\nreqBody: %s: ", reqBody)
 	}
 
-	credsAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/present-proof/records/"+presExID+"/credentials", getWalletName(holderId))
+	credsAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/present-proof/records/"+presExID+"/credentials", wallets.GetWalletName(holderId))
 	if err != nil {
 		log.Error("utils.RequestGET() error:", err.Error())
 		return err
@@ -491,7 +501,7 @@ func sendProof(holderId string, reqBody string) error {
 		"self_attested_attributes": {}
 	}`, "")
 
-	_, err = utils.RequestPost(config.AgentApiUrl, "/present-proof/records/"+presExID+"/send-presentation", getWalletName(holderId), []byte(body))
+	_, err = utils.RequestPost(config.AgentApiUrl, "/present-proof/records/"+presExID+"/send-presentation", wallets.GetWalletName(holderId), []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -499,22 +509,6 @@ func sendProof(holderId string, reqBody string) error {
 
 	log.Info("[" + holderId + "] sendProof <<< done")
 	return nil
-}
-
-func deleteWallet(holderId string) error {
-	// Delete wallet
-	log.Info("[" + holderId + "] Delete my wallet - walletName: " + getWalletName(holderId))
-	_, err := utils.RequestDelete(config.AgentApiUrl, "/wallet/me", getWalletName(holderId))
-	if err != nil {
-		log.Error("utils.RequestDelete() error:", err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func getWalletName(holderId string) string {
-	return "alice_" + holderId + "." + version
 }
 
 func sendWorkDoneSignal(holderId string, err error) {
@@ -527,5 +521,5 @@ func exit(holderId string, err error) {
 	fmt.Printf("[ERROR] holderId: %s, error: %v\n", holderId, err)
 	// Generate kill signal to print intermediate result and exit
 	_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-	return
+	select {}
 }

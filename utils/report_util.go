@@ -20,8 +20,7 @@ type Phase uint64
  * StartTime type implementation                  *
  **************************************************/
 type StartTime struct {
-	stime map[string]map[Phase]time.Time // time[holderId][phase] returns stored start time
-	mutex sync.RWMutex
+	stime sync.Map // stime[holderId][phase] -> start time
 }
 
 const (
@@ -40,24 +39,24 @@ var (
 )
 
 func NewStartTime() *StartTime {
-	startTime := &StartTime{}
-	startTime.stime = make(map[string]map[Phase]time.Time)
-
-	return startTime
+	return &StartTime{}
 }
 
 func (st *StartTime) SetStartTime(holderId string, phase Phase) {
-	st.mutex.Lock()
-	st.stime[holderId] = map[Phase]time.Time{phase: time.Now()}
-	st.mutex.Unlock()
+	phaseTime := make(map[Phase]time.Time)
+	phaseTime[phase] = time.Now()
+	st.stime.Store(holderId, phaseTime)
+
+	return
 }
 
 func (st *StartTime) GetStartTime(holderId string, phase Phase) time.Time {
-	st.mutex.RLock()
-	startTime := st.stime[holderId][phase]
-	st.mutex.RUnlock()
+	phaseTime, ok := st.stime.Load(holderId)
+	if ok == false {
+		log.Fatal("get phaseTime value before setting")
+	}
 
-	return startTime
+	return phaseTime.(map[Phase]time.Time)[phase]
 }
 
 /**************************************************
@@ -91,6 +90,12 @@ func (rpt *Report) AddRecord(holderId string, phase Phase, startTime time.Time, 
 	rpt.mutex.Lock()
 	rpt.records = append(rpt.records, rcd)
 	rpt.mutex.Unlock()
+
+	if rcd.duration.Seconds() > float64(HttpTimeout) {
+		log.Fatal("invalid duration value")
+	}
+
+	return
 }
 
 func (rpt *Report) GetRecords() []Record {
@@ -154,6 +159,7 @@ func (rpt *Report) Print() {
 		fmt.Printf("------------------------------------\n")
 	}
 
+	return
 }
 
 /**************************************************
@@ -174,6 +180,10 @@ type PhaseAnalysis struct {
 }
 
 func NewPhaseAnalysis(records []Record, phase Phase) *PhaseAnalysis {
+	if len(records) == 0 {
+		return &PhaseAnalysis{}
+	}
+
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].startTime.Before(records[j].startTime)
 	})

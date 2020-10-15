@@ -41,10 +41,11 @@ type ControllerConfig struct {
 	VerifyOnly bool
 
 	// Alice only, Command line parameters
-	NumHolders  uint64 `validate:"omitempty,gte=1"`
-	NumCycles   uint64 `validate:"omitempty,gtefield=NumHolders"`
-	VerifyRatio uint64 `validate:"omitempty,gte=1"`
-	Infinite    bool
+	NumHolders    uint64 `validate:"omitempty,gte=1"`
+	NumCycles     uint64 `validate:"omitempty"`
+	VerifyRatio   uint64 `validate:"omitempty,gte=1"`
+	StartInterval uint64 `validate:"omitempty,gte=0"`
+	Infinite      bool
 }
 
 var (
@@ -55,10 +56,10 @@ var (
 
 func (config *ControllerConfig) ReadConfig(fileName string, controllerType string) error {
 	var (
-		app                                         *kingpin.Application
-		configFilePtr                               **os.File
-		issueOnlyPtr, verifyOnlyPtr, infinitePtr    *bool
-		numHoldersPtr, numCyclesPtr, verifyRatioPtr *uint64
+		app                                                        *kingpin.Application
+		configFilePtr                                              **os.File
+		issueOnlyPtr, verifyOnlyPtr, infinitePtr                   *bool
+		numHoldersPtr, numCyclesPtr, verifyRatioPtr, startInterval *uint64
 	)
 
 	app = kingpin.New(os.Args[0], "ACA-Py controller")
@@ -73,6 +74,7 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 		numHoldersPtr = app.Flag("num-holders", "Number of holders (i.e. Alice)").Short('n').Default("1").Uint64()
 		numCyclesPtr = app.Flag("num-cycles", "Number of cycles").Short('c').Default("1").Uint64()
 		verifyRatioPtr = app.Flag("verify-ratio", "Verify ratio by onboard and issue ->  verify / (onboard & issue)").Short('r').Default("1").Uint64()
+		startInterval = app.Flag("start-interval", "Random interval before each holder starts (seconds)").Short('l').Default("0").Uint64()
 		infinitePtr = app.Flag("infinite", "If specified, run infinitely ").Short('f').Bool()
 
 	default:
@@ -86,6 +88,7 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 	if issueOnlyPtr != nil {
 		config.IssueOnly = *issueOnlyPtr
 	}
+
 	if verifyOnlyPtr != nil {
 		config.VerifyOnly = *verifyOnlyPtr
 	}
@@ -93,6 +96,7 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 	if numHoldersPtr != nil {
 		config.NumHolders = *numHoldersPtr
 	}
+
 	if numCyclesPtr != nil {
 		config.NumCycles = *numCyclesPtr
 	}
@@ -100,12 +104,17 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 	if verifyRatioPtr != nil {
 		config.VerifyRatio = *verifyRatioPtr
 	}
+
+	if startInterval != nil {
+		config.StartInterval = *startInterval
+	}
+
 	if infinitePtr != nil {
 		config.Infinite = *infinitePtr
 	}
 
 	// Adjust NumCycles
-	if config.NumCycles < config.NumHolders * config.VerifyRatio {
+	if config.NumCycles < config.NumHolders*config.VerifyRatio {
 		config.NumCycles = config.NumHolders * config.VerifyRatio
 	}
 
