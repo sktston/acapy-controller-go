@@ -22,6 +22,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const (
+	exitOnHttpError = true
+)
+
 var (
 	httpClient                = &http.Client{}
 	HttpTimeout time.Duration = 3600 // seconds
@@ -115,8 +119,25 @@ func httpRequest(httpMethod string, url string, uri string, wallet string, body 
 	return respBodyAsBytes, nil
 }
 
-func HttpError(ctx *gin.Context, status int, err error) {
-	log.Error("HttpError:", err.Error())
+func HttpError(ctx *gin.Context, status int, err error, holderId ...string) {
+	var (
+		logFunc func(...interface{})
+	)
+
+	if exitOnHttpError == true {
+		logFunc = log.Fatal
+	} else {
+		logFunc = log.Error
+	}
+
+	bodyAsBytes, _ := ioutil.ReadAll(ctx.Request.Body)
+
+	logFunc("\n\tMethod:", ctx.Request.Method,
+		"\n\tRequestURI:", ctx.Request.RequestURI,
+		"\n\tContent-Type:", ctx.Request.Header.Values("Content-Type"),
+		"\n\tContentLength:", ctx.Request.ContentLength,
+		"\n\tBody:", string(bodyAsBytes),
+		"\n["+holderId[0]+"] http error:", err.Error())
 
 	errStruct := gin.H{
 		"Code":    status,

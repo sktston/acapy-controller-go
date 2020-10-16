@@ -26,7 +26,7 @@ func (wp *WalletPool) SetWalletName(holderId string, version string) {
 func (wp *WalletPool) GetWalletName(holderId string) string {
 	walletName, ok := wp.walletMap.Load(holderId)
 	if ok == false {
-		log.Fatal("get value before setting")
+		log.Fatal("[" + holderId + "] get value before setting")
 	}
 
 	return walletName.(string)

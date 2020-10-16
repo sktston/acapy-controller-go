@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/sktston/acapy-controller-go/utils"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -256,24 +258,32 @@ func handleMessage(ctx *gin.Context) {
 		err                    error
 	)
 
+	holderId = ctx.Param("holderId")
+	topic = ctx.Param("topic")
+
+	// Retrieve request body for error handling
+	bodyAsBytes, _ := ioutil.ReadAll(ctx.Request.Body)
+	ctx.Request.Body = ioutil.NopCloser(bytes.NewReader(bodyAsBytes))
+
+	// Read body for json binding and then restore again
 	err = ctx.ShouldBindJSON(&body)
+	ctx.Request.Body = ioutil.NopCloser(bytes.NewReader(bodyAsBytes))
+
 	if err != nil {
-		utils.HttpError(ctx, http.StatusBadRequest, err)
+		log.Error("ShouldBindJSON() error:", err.Error())
+		utils.HttpError(ctx, http.StatusBadRequest, err, holderId)
 		return
 	}
 
-	topic = ctx.Param("topic")
 	if topic == "problem_report" {
 		state = ""
 	} else {
 		state = body["state"].(string)
 	}
 
-	holderId = ctx.Param("holderId")
-
 	switch topic {
 	case "connections":
-		if state == "request" {
+		if state == "invitation" {
 			startTime.SetStartTime(holderId, utils.ConnectPhase)
 		} else if state == "active" {
 			startTime := startTime.GetStartTime(holderId, utils.ConnectPhase)

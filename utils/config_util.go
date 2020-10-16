@@ -52,6 +52,7 @@ var (
 	appVersion = os.Args[0] + " version 1.0.0\n" + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH
 	Log        = goLog.New(os.Stdout).WithColor().WithoutTimestamp()
 	log        = Log
+	debugMode  bool
 )
 
 func (config *ControllerConfig) ReadConfig(fileName string, controllerType string) error {
@@ -147,16 +148,22 @@ func (config *ControllerConfig) ReadConfig(fileName string, controllerType strin
 	return nil
 }
 
-func SetDebugMode(debugMode bool) {
-	if debugMode == true {
+func SetDebugMode(flag bool) {
+	if flag == true {
 		Log.WithDebug()
 		gin.SetMode(gin.DebugMode)
+		debugMode = true
 	} else {
 		Log.WithoutDebug()
 		gin.SetMode(gin.ReleaseMode)
+		debugMode = false
 	}
 
 	return
+}
+
+func GetDebugMode() bool {
+	return debugMode
 }
 
 func GetOutboundIP() net.IP {

@@ -228,6 +228,7 @@ func handleMessage(ctx *gin.Context) {
 
 	err = ctx.ShouldBindJSON(&body)
 	if err != nil {
+		log.Error("ShouldBindJSON() error:", err.Error())
 		utils.HttpError(ctx, http.StatusBadRequest, err)
 		return
 	}

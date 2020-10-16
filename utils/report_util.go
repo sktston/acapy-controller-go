@@ -16,13 +16,6 @@ import (
 
 type Phase uint64
 
-/**************************************************
- * StartTime type implementation                  *
- **************************************************/
-type StartTime struct {
-	stime sync.Map // stime[holderId][phase] -> start time
-}
-
 const (
 	ConnectPhase Phase = 1 << iota
 	IssuePhase
@@ -37,6 +30,13 @@ var (
 		VerifyPhase:  "Verify",
 		AllPhase:     "Total"}
 )
+
+/**************************************************
+ * StartTime type implementation                  *
+ **************************************************/
+type StartTime struct {
+	stime sync.Map // stime[holderId][phase] -> start time
+}
 
 func NewStartTime() *StartTime {
 	return &StartTime{}
@@ -53,7 +53,7 @@ func (st *StartTime) SetStartTime(holderId string, phase Phase) {
 func (st *StartTime) GetStartTime(holderId string, phase Phase) time.Time {
 	phaseTime, ok := st.stime.Load(holderId)
 	if ok == false {
-		log.Fatal("get phaseTime value before setting")
+		log.Fatal("[" + holderId + "] get phaseTime before setting")
 	}
 
 	return phaseTime.(map[Phase]time.Time)[phase]
@@ -92,9 +92,14 @@ func (rpt *Report) AddRecord(holderId string, phase Phase, startTime time.Time, 
 	rpt.mutex.Unlock()
 
 	if rcd.duration.Seconds() > float64(HttpTimeout) {
-		log.Fatal("invalid duration value")
+		log.Fatal("AddRecord() error:",
+			"\n\tholderId:", rcd.holderId,
+			"\n\tphase:", PhaseMap[rcd.phase],
+			"\n\tstartTime:", rcd.startTime,
+			"\n\tendTime:", rcd.endTime,
+			"\n\tduration:", rcd.duration,
+			"\n[" + holderId + "] invalid duration value (sec):", rcd.duration.Seconds())
 	}
-
 	return
 }
 
