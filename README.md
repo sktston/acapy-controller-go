@@ -9,9 +9,10 @@ The controller implementation is in directory [alice](./alice) & [faber](./faber
 Repository structure details:
 ```
 /
-├── alice/   # Alice (Holder) controller implementation
-├── faber/   # Faber (Issuer&Verifier) controller implementation
-└── utils/   # Common utility functions 
+├── alice/       # Alice (Holder) controller implementation
+├── alice-multi/ # Multi-Alice (Multi-holder) controller implementation
+├── faber/       # Faber (Issuer&Verifier) controller implementation
+└── utils/       # Common utility functions 
 ```
 
 ## Prerequisite 
@@ -73,4 +74,25 @@ $ ./faber -v
 Terminal 3: Holder
 $ cd ~/work/acapy-controller-go/alice
 $ ./alice
+```
+
+### Run Multi-Alice controller
+
+- Multiple holders (Alice) simultaneously execute issue and verify
+- You can specify the number of holders and the total number of cycles (1 cycle = 1 issue & 1 verify) to be performed.
+- Details of each parameter can be checked with 'alice-multi --help'.
+```
+Terminal 1: Issuer
+$ cd ~/work/acapy-controller-go/faber
+$ ./faber -i
+
+Terminal 2: Verifier
+$ cd ~/work/acapy-controller-go/faber
+$ ./faber -v
+
+Terminal 3: Multi-Holder 
+(2 holder, 4 cycles -> 
+Each holder performs 2 issue & verify)
+$ cd ~/work/acapy-controller-go/alice-multi
+$ ./alice-multi -n 2 -c 4 
 ```
