@@ -531,14 +531,13 @@ func sendProofRequest(connectionID string) error {
 func revokeCredential(revRegId string, credRevId string) error {
 	log.Info("revokeCredential >>> revRegId:" + revRegId + ", credRevId:" + credRevId)
 
-	queryParam := url.Values{}
-	queryParam.Add("rev_reg_id", revRegId)
-	queryParam.Add("cred_rev_id", credRevId)
-	queryParam.Add("publish", "true")
+	body := utils.PrettyJson(`{
+		"rev_reg_id": "`+revRegId+`",
+		"cred_rev_id": "`+credRevId+`",
+		"publish": true
+	}`, "")
 
-	URI := "/issue-credential/revoke" + "?" + queryParam.Encode()
-
-	_, err := utils.RequestPost(config.AgentApiUrl, URI, walletName, []byte("{}"))
+	_, err := utils.RequestPost(config.AgentApiUrl, "/revocation/revoke", walletName, []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -562,6 +561,16 @@ func printProofResult(body string) error {
 		return fmt.Errorf("verified does not exist\nbody: %s: ", body)
 	}
 	log.Info("  - Proof validation:" + verified)
+
+	// Check validation result
+	verified = strings.ToLower(verified)
+	if (config.SupportRevoke == false && verified == "false") ||
+		(config.SupportRevoke == true && config.RevokeAfterIssue == true && verified == "true") {
+		log.Error("SupportRevoke:", config.SupportRevoke)
+		log.Error("RevokeAfterIssue:", config.RevokeAfterIssue)
+		log.Error("Verified:", verified)
+		return errors.New("verification fails")
+	}
 
 	log.Info("printProofResult <<< done")
 	return nil
