@@ -1,8 +1,7 @@
 {
   "AgentApiUrl"      : "http://localhost:8021",
-  "AdminWalletName"  : "admin",
   "HolderWebhookUrl" : "http://host.docker.internal:8023/webhooks",
   "IssuerContURL"    : "http://localhost:8022",
-  "VerifierContURL"  : "http://localhost:8032",
+  "VerifierContURL"  : "http://localhost:8022",
   "Debug"            : false
 }

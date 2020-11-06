@@ -11,16 +11,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/skip2/go-qrcode"
-	"github.com/tidwall/gjson"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/skip2/go-qrcode"
+	"github.com/tidwall/gjson"
 
 	"github.com/sktston/acapy-controller-go/utils"
 )
@@ -33,10 +34,10 @@ var (
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
-	adminWalletName = "admin"
-	walletName      = "faber." + version
-	imageUrl        = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-	seed            = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	baseWalletName = "base"
+	walletName     = "faber." + version
+	imageUrl       = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
+	seed           = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {
@@ -296,7 +297,7 @@ func handleMessage(ctx *gin.Context) {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
 			}
-			err = printProofResult(string(bodyAsBytes))
+			err = validateProofResult(string(bodyAsBytes))
 			if err != nil {
 				utils.HttpError(ctx, http.StatusInternalServerError, err)
 				return
@@ -341,7 +342,7 @@ func createWalletAndDid() error {
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", "", []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -386,7 +387,7 @@ func registerDidAsIssuer() error {
 	log.Info("Register the did to the ledger as a ENDORSER")
 
 	// did of admin wallet must have STEWARD role
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/ledger/register-nym"+params, adminWalletName, []byte("{}"))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/ledger/register-nym"+params, baseWalletName, []byte("{}"))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
@@ -547,8 +548,8 @@ func revokeCredential(revRegId string, credRevId string) error {
 	return nil
 }
 
-func printProofResult(body string) error {
-	log.Info("printProofResult >>> start")
+func validateProofResult(body string) error {
+	log.Info("validateProofResult >>> start")
 
 	requestedProof := gjson.Get(body, "presentation.requested_proof").String()
 	if requestedProof == "" {
@@ -563,15 +564,33 @@ func printProofResult(body string) error {
 	log.Info("  - Proof validation:" + verified)
 
 	// Check validation result
-	verified = strings.ToLower(verified)
-	if (config.SupportRevoke == false && verified == "false") ||
-		(config.SupportRevoke == true && config.RevokeAfterIssue == true && verified == "true") {
-		log.Error("SupportRevoke:", config.SupportRevoke)
-		log.Error("RevokeAfterIssue:", config.RevokeAfterIssue)
-		log.Error("Verified:", verified)
+	var (
+		expected bool
+	)
+
+	result, err := strconv.ParseBool(verified)
+	if err != nil {
+		return fmt.Errorf("invalid boolean varified value: %s: ", verified)
+	}
+
+	if config.SupportRevoke == false {
+		expected = true
+	} else {
+		if config.RevokeAfterIssue == true {
+			expected = false
+		} else {
+			expected = true
+		}
+	}
+
+	if expected != result {
+		log.Error("\nSupportRevoke:", config.SupportRevoke,
+			"\nRevokeAfterIssue:", config.RevokeAfterIssue,
+			"\nExpected:", expected,
+			"\nVerified:", result)
 		return errors.New("verification fails")
 	}
 
-	log.Info("printProofResult <<< done")
+	log.Info("validateProofResult <<< done")
 	return nil
 }

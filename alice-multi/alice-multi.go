@@ -11,11 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/sktston/acapy-controller-go/utils"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -29,6 +24,14 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
+	"github.com/sktston/acapy-controller-go/utils"
 )
 
 type workDone struct {
@@ -36,16 +39,13 @@ type workDone struct {
 	error    error
 }
 
-
-
 var (
-	log             = utils.Log
-	config          utils.ControllerConfig
-	adminWalletName = "admin"
-	workDoneSignal  chan workDone
-	report          = utils.NewReport()
-	startTime       = utils.NewStartTime()
-	wallets         = utils.NewWalletPool()
+	log            = utils.Log
+	config         utils.ControllerConfig
+	workDoneSignal chan workDone
+	report         = utils.NewReport()
+	startTime      = utils.NewStartTime()
+	wallets        = utils.NewWalletPool()
 )
 
 func main() {
@@ -71,10 +71,13 @@ func main() {
 	)
 	workDoneSignal = make(chan workDone, config.NumHolders)
 
-	// Uses all CPUs
-	fmt.Printf("\n-------   NumCPU   -------\n")
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	fmt.Printf("NumCPU: %d\n", runtime.GOMAXPROCS(0))
+	fmt.Printf("\n-------   Number of CPUs   -------\n")
+	runtime.GOMAXPROCS(runtime.NumCPU())		// Uses all CPUs
+	physicalCount, _ := cpu.Counts(false)
+	logicalCount, _ := cpu.Counts(true)
+	fmt.Printf("Pysical CPUs: %d\n", physicalCount)
+	fmt.Printf("Logical CPUs: %d\n", logicalCount)
+	fmt.Printf("Allocated CPUs: %d\n", runtime.GOMAXPROCS(0))
 
 	fmt.Printf("\n-------   Working start   -------\n")
 
@@ -387,7 +390,7 @@ func createWalletAndDid(holderId string) (did string, verKey string, seed string
 	}`, "")
 
 	log.Info("[" + holderId + "] Create a new wallet:" + utils.PrettyJson(body))
-	_, err = utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	_, err = utils.RequestPost(config.AgentApiUrl, "/wallet", "", []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return "", "", "", err

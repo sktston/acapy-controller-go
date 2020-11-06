@@ -10,11 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/sktston/acapy-controller-go/utils"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,6 +18,13 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
+	"github.com/sktston/acapy-controller-go/utils"
 )
 
 var (
@@ -33,10 +35,9 @@ var (
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
-	adminWalletName = "admin"
-	walletName      = "alice." + version
-	imageUrl        = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-	seed            = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	walletName = "alice." + version
+	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
+	seed       = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
 )
 
 func main() {
@@ -190,7 +191,6 @@ func handleMessage(ctx *gin.Context) {
 					return
 				}
 			}
-
 		} else {
 			log.Info("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
 		}
@@ -257,7 +257,7 @@ func createWalletAndDid() error {
 	}`, "")
 
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", adminWalletName, []byte(body))
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet", "", []byte(body))
 	if err != nil {
 		log.Error("utils.RequestPost() error:", err.Error())
 		return err
