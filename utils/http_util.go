@@ -31,30 +31,30 @@ var (
 	HttpTimeout time.Duration = 3600 // seconds
 )
 
-func RequestGet(url string, uri string, wallet string, headers ...string) ([]byte, error) {
-	return httpRequest(http.MethodGet, url, uri, wallet, []byte(""), headers...)
+func RequestGet(url string, uri string, token string, headers ...string) ([]byte, error) {
+	return httpRequest(http.MethodGet, url, uri, token, []byte(""), headers...)
 }
 
-func RequestPost(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+func RequestPost(url string, uri string, token string, body []byte, headers ...string) ([]byte, error) {
 	appendHeaders := append(headers, "Content-Type:application/json")
-	return httpRequest(http.MethodPost, url, uri, wallet, body, appendHeaders...)
+	return httpRequest(http.MethodPost, url, uri, token, body, appendHeaders...)
 }
 
-func RequestDelete(url string, uri string, wallet string, headers ...string) ([]byte, error) {
-	return httpRequest(http.MethodDelete, url, uri, wallet, []byte(""), headers...)
+func RequestDelete(url string, uri string, token string, headers ...string) ([]byte, error) {
+	return httpRequest(http.MethodDelete, url, uri, token, []byte(""), headers...)
 }
 
-func RequestPatch(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+func RequestPatch(url string, uri string, token string, body []byte, headers ...string) ([]byte, error) {
 	appendHeaders := append(headers, "Content-Type:application/json")
-	return httpRequest(http.MethodPatch, url, uri, wallet, body, appendHeaders...)
+	return httpRequest(http.MethodPatch, url, uri, token, body, appendHeaders...)
 }
 
-func RequestPut(url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+func RequestPut(url string, uri string, token string, body []byte, headers ...string) ([]byte, error) {
 	appendHeaders := append(headers, "Content-Type:application/json")
-	return httpRequest(http.MethodPut, url, uri, wallet, body, appendHeaders...)
+	return httpRequest(http.MethodPut, url, uri, token, body, appendHeaders...)
 }
 
-func httpRequest(httpMethod string, url string, uri string, wallet string, body []byte, headers ...string) ([]byte, error) {
+func httpRequest(httpMethod string, url string, uri string, token string, body []byte, headers ...string) ([]byte, error) {
 	httpRequest, err := http.NewRequest(httpMethod, url+uri, bytes.NewBuffer(body))
 
 	if err != nil {
@@ -69,9 +69,9 @@ func httpRequest(httpMethod string, url string, uri string, wallet string, body 
 		httpRequest.Header.Set(key, value)
 	}
 
-	// Add wallet header
-	if wallet != "" {
-		httpRequest.Header.Add("wallet", wallet)
+	// Add jwtToken to header
+	if token != "" {
+		httpRequest.Header.Add("Authorization", "Bearer "+token)
 	}
 
 	// Set request timeout
@@ -101,7 +101,7 @@ func httpRequest(httpMethod string, url string, uri string, wallet string, body 
 		log.Error(PrettyJson(`{
 				"httpMethod": "`+httpMethod+`",
 				"url+uri": "`+url+uri+`",
-				"wallet": "`+wallet+`",
+				"Authorization": "`+"Bearer "+token+`",
 				"StatusCode": `+strconv.Itoa(httpResp.StatusCode)+`,
 				"RespBody": "`+string(respBodyAsBytes)+`"
 			}`, "  "))
@@ -146,6 +146,27 @@ func HttpError(ctx *gin.Context, status int, err error, holderId ...string) {
 
 	ctx.JSON(status, errStruct)
 	return
+}
+
+func JsonString(jsonString string) string {
+	var unmarshalData interface{}
+
+	jsonString = strings.ReplaceAll(jsonString, "\n", "")
+
+	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
+	if err != nil {
+		// Caution: no error handling for easy use
+		log.Error("json.Unmarshal() error", err.Error())
+		log.Error("jsonString:", jsonString)
+	}
+	jsonStringAsBytes, err := json.Marshal(unmarshalData)
+	if err != nil {
+		// Caution: no error handling for easy use
+		log.Error("json.Marshal() error", err.Error())
+		log.Error("jsonString:", jsonString)
+	}
+
+	return string(jsonStringAsBytes)
 }
 
 func PrettyJson(jsonString string, indent ...string) string {

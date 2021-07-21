@@ -23,6 +23,7 @@ import (
 type ControllerConfig struct {
 	// Common from json file
 	AgentApiUrl string `json:"AgentApiUrl" validate:"required,url"`
+	WalletType  string `json:"WalletType"`
 	Debug       bool   `json:"Debug"`
 
 	// Faber only from json file

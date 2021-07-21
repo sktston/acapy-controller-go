@@ -30,6 +30,7 @@ var (
 	log                                          = utils.Log
 	config                                       utils.ControllerConfig
 	webhookUrl, did, verKey, schemaID, credDefID string
+	stewardJwtToken                              string
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
@@ -38,6 +39,7 @@ var (
 	walletName     = "faber." + version
 	imageUrl       = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 	seed           = strings.Replace(uuid.New().String(), "-", "", -1) // random seed 32 characters
+	stewardSeed    = "000000000000000000000000Steward1"
 )
 
 func main() {
@@ -58,7 +60,7 @@ func main() {
 	defer func() { _ = shutdownWebHookServer(httpServer) }()
 
 	// Start Faber
-	err = initializeAfterStartup()
+	err = provisionController()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -124,9 +126,16 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 	return nil
 }
 
-func initializeAfterStartup() error {
+func provisionController() error {
+	log.Info("Obtain jwtToken of steward")
+	err := obtainStewardJwtToken()
+	if err != nil { log.Error("obtainStewardJwtToken() error:", err.Error()); return err }
+
+	// TODO: bellow is need to update
+	os.Exit(0)
+
 	log.Info("Create wallet and did, register did as issuer, and register webhook url")
-	err := createWalletAndDid()
+	err = createWalletAndDid()
 	if err != nil {
 		log.Error("createWalletAndDid() error:", err.Error())
 		return err
@@ -327,6 +336,54 @@ func handleMessage(ctx *gin.Context) {
 	}
 
 	return
+}
+
+func obtainStewardJwtToken() error {
+	// check if steward wallet already exists
+	stewardWallet := "steward"
+	params := "?wallet_name="+stewardWallet
+	respAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/multitenancy/wallets" + params, "")
+	if err != nil { log.Error("utils.RequestGet() error:", err.Error()); return err }
+	log.Info("response: " + string(respAsBytes))
+
+	wallets := gjson.Get(string(respAsBytes), "results").Array()
+	if len(wallets) == 0 {
+		// stewardWallet not exists -> create stewardWallet and get jwt token
+		body := utils.JsonString(`{
+			"wallet_name": "`+stewardWallet+`",
+			"wallet_key": "`+stewardWallet+".key"+`",
+			"wallet_type": "`+config.WalletType+`"
+		}`)
+		log.Info("Not found steward wallet - Create a new steward wallet:"+utils.PrettyJson(body))
+		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/multitenancy/wallet", "", []byte(body))
+		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
+		log.Info("response: " + string(respAsBytes))
+		stewardJwtToken = gjson.Get(string(respAsBytes), "token").String()
+
+		body = utils.JsonString(`{ "seed": "`+stewardSeed+`" }`)
+		log.Info("Create a steward did:"+utils.PrettyJson(body))
+		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", stewardJwtToken, []byte(body))
+		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
+		log.Info("response: " + string(respAsBytes))
+		stewardDid := gjson.Get(string(respAsBytes), "result.did").String()
+
+		params = "?did="+stewardDid
+		log.Info("Assign the did to public:"+stewardDid)
+		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/public"+params, stewardJwtToken, []byte("{}"))
+		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
+		log.Info("response: " + string(respAsBytes))
+
+		return nil
+	} else {
+		// stewardWallet exists -> get and return jwt token
+		stewardWalletId := gjson.Get(wallets[0].String(), "wallet_id").String()
+		log.Info("Found steward wallet - Get jwt token with wallet id: "+stewardWalletId)
+		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/multitenancy/wallet/"+stewardWalletId+"/token", "", []byte("{}"))
+		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
+		log.Info("response: " + string(respAsBytes))
+		stewardJwtToken = gjson.Get(string(respAsBytes), "token").String()
+		return nil
+	}
 }
 
 func createWalletAndDid() error {

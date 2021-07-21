@@ -1,5 +1,6 @@
 {
   "AgentApiUrl"        : "http://localhost:8021",
+  "WalletType"         : "indy",
   "IssuerWebhookUrl"   : "http://host.docker.internal:8022/webhooks",
   "VerifierWebhookUrl" : "http://host.docker.internal:8032/webhooks",
   "SupportRevoke"      : false,
