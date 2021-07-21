@@ -1,7 +1,7 @@
 # Controller of aries-cloudagent-python (Go version)
 - Implementation of [Hyperledger Aries Cloud Agent - Python(ACA-Py)](https://github.com/hyperledger/aries-cloudagent-python) compatible Controller.
 
-- Porting the initial implementation of java by the [Dr. Baekje Seong](https://github.com/baegjae) in go language and all features  follow the [java version](https://github.com/sktston/acapy-controller-java)
+- Porting the initial implementation of java by the [Dr. Baegjae Sung](https://github.com/baegjae) in go language and all features  follow the [java version](https://github.com/sktston/acapy-controller-java)
 
 ## Repository structure
 The controller implementation is in directory [alice](./alice) & [faber](./faber). 
