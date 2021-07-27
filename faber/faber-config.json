@@ -3,6 +3,7 @@
   "WalletType"         : "indy",
   "IssuerWebhookUrl"   : "http://localhost:8040/webhooks",
   "VerifierWebhookUrl" : "http://localhost:8050/webhooks",
+  "PublicInvitation"   : true,
   "SupportRevoke"      : false,
   "RevokeAfterIssue"   : false,
   "Debug"              : false

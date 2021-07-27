@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"github.com/sktston/acapy-controller-go/utils"
@@ -32,34 +31,27 @@ var (
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
-	baseWalletName = "base"
 	walletName     = "faber." + version
 	imageUrl       = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 	stewardSeed    = "000000000000000000000000Steward1"
 )
 
 func main() {
-	// Read faber-config.yaml file
+	// Read faber-config.json file
 	err := config.ReadConfig("./faber-config.json", "issuer-verifier")
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	if err != nil { log.Fatal("ReadConfig() error:", err.Error()) }
 
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
 
 	// Start web hook server
 	httpServer, err := startWebHookServer()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	if err != nil { log.Fatal("startWebHookServer() error:", err.Error()) }
 	defer func() { _ = shutdownWebHookServer(httpServer) }()
 
 	// Start Faber
 	err = provisionController()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	if err != nil { log.Fatal("provisionController() error:", err.Error()) }
 
 	log.Info("Waiting web hook event from agent...")
 	select {}
@@ -72,7 +64,7 @@ func startWebHookServer() (*http.Server, error) {
 	router.Use(gin.Logger())
 
 	router.GET("/invitation", createInvitation)
-	router.GET("/invitation-url", createInvitationUrlQr)
+	router.GET("/invitation-url", createInvitationUrl)
 	router.GET("/invitation-qr", createInvitationUrlQr)
 	router.POST("/webhooks/topic/:topic", handleMessage)
 
@@ -91,10 +83,7 @@ func startWebHookServer() (*http.Server, error) {
 
 	// Start http server
 	listener, err := net.Listen("tcp", port)
-	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
-	}
+	if err != nil { log.Fatal("net.Listen() error:", err.Error()) }
 
 	httpServer := &http.Server{
 		Handler: router,
@@ -102,9 +91,7 @@ func startWebHookServer() (*http.Server, error) {
 
 	go func() {
 		err = httpServer.Serve(listener)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		if err != nil { log.Fatal("httpServer.Serve() error:", err.Error()) }
 	}()
 	log.Info("Listen on http://" + utils.GetOutboundIP().String() + port)
 
@@ -114,9 +101,7 @@ func startWebHookServer() (*http.Server, error) {
 func shutdownWebHookServer(httpServer *http.Server) error {
 	// Shutdown http server gracefully
 	err := httpServer.Shutdown(context.Background())
-	if err != nil {
-		return err
-	}
+	if err != nil { log.Error("ttpServer.Shutdown() error:", err.Error()); return err }
 	log.Info("Http server shutdown successfully")
 
 	return nil
@@ -161,51 +146,41 @@ func provisionController() error {
 }
 
 func createInvitation(ctx *gin.Context) {
-	log.Info("createInvitation >>> start")
-
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation", walletName, []byte("{}"))
-	if err != nil {
-		utils.HttpError(ctx, http.StatusInternalServerError, err)
-		return
-	}
+	params := "?public="+strconv.FormatBool(config.PublicInvitation)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+	log.Info("response: " + string(respAsBytes))
 
 	invitation := gjson.Get(string(respAsBytes), "invitation").String()
-	if invitation == "" {
-		utils.HttpError(ctx, http.StatusInternalServerError, errors.New("invitation is null"))
-		return
-	}
-
-	log.Info("createInvitation <<< invitation:" + utils.PrettyJson(invitation))
 	ctx.String(http.StatusOK, invitation)
 
 	return
 }
 
+func createInvitationUrl(ctx *gin.Context) {
+	params := "?public="+strconv.FormatBool(config.PublicInvitation)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+	log.Info("response: " + string(respAsBytes))
+
+	invitationUrl := gjson.Get(string(respAsBytes), "invitation_url").String()
+	ctx.String(http.StatusOK, invitationUrl)
+
+	return
+}
+
 func createInvitationUrlQr(ctx *gin.Context) {
-	log.Info("createInvitationUrl >>> start")
+	params := "?public="+strconv.FormatBool(config.PublicInvitation)
+	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+	log.Info("response: " + string(respAsBytes))
 
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation", walletName, []byte("{}"))
-	if err != nil {
-		utils.HttpError(ctx, http.StatusInternalServerError, err)
-		return
-	}
+	invitationUrl := gjson.Get(string(respAsBytes), "invitation_url").String()
 
-	invitationURL := gjson.Get(string(respAsBytes), "invitation_url").String()
-	if invitationURL == "" {
-		utils.HttpError(ctx, http.StatusInternalServerError, errors.New("invitation is null"))
-		return
-	}
-
-	// Generate QR code
-	if ctx.FullPath() == "/invitation-qr" {
-		// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
-		qrCode, _ := qrcode.New(invitationURL, qrcode.Low)
-		qrCodeString := qrCode.ToSmallString(false)
-		invitationURL = qrCodeString
-	}
-
-	log.Info("createInvitationURL <<< invitationURL:\n" + invitationURL)
-	ctx.String(http.StatusOK, invitationURL)
+	// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
+	qrCode, _ := qrcode.New(invitationUrl, qrcode.Low)
+	qrCodeString := qrCode.ToSmallString(false)
+	ctx.String(http.StatusOK, qrCodeString)
 
 	return
 }
