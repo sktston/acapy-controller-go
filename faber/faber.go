@@ -12,17 +12,19 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
 	"github.com/skip2/go-qrcode"
+	"github.com/sktston/acapy-controller-go/utils"
 	"github.com/tidwall/gjson"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
-
-	"github.com/sktston/acapy-controller-go/utils"
+	"time"
 )
 
 var (
+	client                                       = resty.New()
 	log                                          = utils.Log
 	config                                       utils.ControllerConfig
 	webhookUrl, did, verKey, schemaID, credDefID string
@@ -31,9 +33,9 @@ var (
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(utils.GetRandomInt(1, 99))
-	walletName     = "faber." + version
-	imageUrl       = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-	stewardSeed    = "000000000000000000000000Steward1"
+	walletName  = "faber." + version
+	imageUrl    = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
+	stewardSeed = "000000000000000000000000Steward1"
 )
 
 func main() {
@@ -43,6 +45,10 @@ func main() {
 
 	// Set debug mode
 	utils.SetDebugMode(config.Debug)
+
+	// Set client configuration
+	client.SetTimeout(30 * time.Minute)
+	client.SetHeader("Content-Type", "application/json")
 
 	// Start web hook server
 	httpServer, err := startWebHookServer()
@@ -110,23 +116,21 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 func provisionController() error {
 	log.Info("Obtain jwtToken of steward")
 	err := obtainStewardJwtToken()
-	if err != nil { log.Error("obtainStewardJwtToken() error:", err.Error()); return err }
+	if err != nil { log.Error(err); return err }
 
-	log.Info("Create wallet and did")
+	log.Info("Create wallet")
 	err = createWallet()
-	if err != nil { log.Error("createWallet() error:", err.Error()); return err }
+	if err != nil { log.Error(err); return err }
 
-	if config.VerifyOnly == false {
-		log.Info("Register did as an issuer")
-		err = createPublicDid()
-		if err != nil { log.Error("createPublicDid() error:", err.Error()); return err }
+	log.Info("Create a new did and register the did as an issuer")
+	err = createPublicDid()
+	if err != nil { log.Error(err); return err }
 
-		log.Info("Create schema and credential definition")
-		err = createSchema()
-		if err != nil { log.Error("createSchema() error:", err.Error()); return err }
-		err = createCredentialDefinition()
-		if err != nil { log.Error("createCredentialDefinition() error:", err.Error()); return err }
-	}
+	log.Info("Create schema and credential definition")
+	err = createSchema()
+	if err != nil { log.Error(err); return err }
+	err = createCredentialDefinition()
+	if err != nil { log.Error(err); return err }
 
 	log.Info("Configuration of faber:")
 	log.Info("- wallet name: " + walletName)
@@ -295,12 +299,13 @@ func handleEvent(ctx *gin.Context) {
 func obtainStewardJwtToken() error {
 	// check if steward wallet already exists
 	stewardWallet := "steward"
-	params := "?wallet_name="+stewardWallet
-	respAsBytes, err := utils.RequestGet(config.AgentApiUrl, "/multitenancy/wallets" + params, "")
-	if err != nil { log.Error("utils.RequestGet() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
+	resp, err := client.R().
+		SetQueryParam("wallet_name",stewardWallet).
+		Get(config.AgentApiUrl+"/multitenancy/wallets")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
 
-	wallets := gjson.Get(string(respAsBytes), "results").Array()
+	wallets := gjson.Get(resp.String(), "results").Array()
 	if len(wallets) == 0 {
 		// stewardWallet not exists -> create stewardWallet and get jwt token
 		body := utils.JsonString(`{
@@ -308,32 +313,40 @@ func obtainStewardJwtToken() error {
 			"wallet_key": "`+stewardWallet+".key"+`",
 			"wallet_type": "`+config.WalletType+`"
 		}`)
-		log.Info("Not found steward wallet - Create a new steward wallet:"+utils.PrettyJson(body))
-		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/multitenancy/wallet", "", []byte(body))
-		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-		log.Info("response: " + string(respAsBytes))
-		stewardJwtToken = gjson.Get(string(respAsBytes), "token").String()
+		log.Info("Not found steward wallet - Create a new steward wallet: "+utils.PrettyJson(body))
+		resp, err = client.R().
+			SetBody(body).
+			Post(config.AgentApiUrl+"/multitenancy/wallet")
+		if err != nil { log.Error(err); return err }
+		log.Info("response: ", resp)
+		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 
 		body = utils.JsonString(`{ "seed": "`+stewardSeed+`" }`)
-		log.Info("Create a steward did:"+utils.PrettyJson(body))
-		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", stewardJwtToken, []byte(body))
-		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-		log.Info("response: " + string(respAsBytes))
-		stewardDid := gjson.Get(string(respAsBytes), "result.did").String()
+		log.Info("Create a steward did: "+utils.PrettyJson(body))
+		resp, err = client.R().
+			SetBody(body).
+			SetAuthToken(stewardJwtToken).
+			Post(config.AgentApiUrl+"/wallet/did/create")
+		if err != nil { log.Error(err); return err }
+		log.Info("response: ", resp)
+		stewardDid := gjson.Get(resp.String(), "result.did").String()
 
-		params = "?did="+stewardDid
 		log.Info("Assign the did to public:"+stewardDid)
-		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/public"+params, stewardJwtToken, []byte("{}"))
-		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-		log.Info("response: " + string(respAsBytes))
+		resp, err = client.R().
+			SetQueryParam("did", stewardDid).
+			SetAuthToken(stewardJwtToken).
+			Post(config.AgentApiUrl+"/wallet/did/public")
+		if err != nil { log.Error(err); return err }
+		log.Info("response: ", resp)
 	} else {
 		// stewardWallet exists -> get and return jwt token
 		stewardWalletId := gjson.Get(wallets[0].String(), "wallet_id").String()
 		log.Info("Found steward wallet - Get jwt token with wallet id: "+stewardWalletId)
-		respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/multitenancy/wallet/"+stewardWalletId+"/token", "", []byte("{}"))
-		if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-		log.Info("response: " + string(respAsBytes))
-		stewardJwtToken = gjson.Get(string(respAsBytes), "token").String()
+		resp, err = client.R().
+			Post(config.AgentApiUrl+"/multitenancy/wallet/"+stewardWalletId+"/token")
+		if err != nil { log.Error(err); return err }
+		log.Info("response: ", resp)
+		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 	}
 	return nil
 }
@@ -348,38 +361,46 @@ func createWallet() error {
 		"wallet_webhook_urls": ["`+webhookUrl+`"]
 	}`)
 	log.Info("Create a new wallet:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/multitenancy/wallet", "", []byte(body))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
-	walletId = gjson.Get(string(respAsBytes), `settings.wallet\.id`).String()
-	jwtToken = gjson.Get(string(respAsBytes), "token").String()
+	resp, err := client.R().
+		SetBody(body).
+		Post(config.AgentApiUrl+"/multitenancy/wallet")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
+	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
+	jwtToken = gjson.Get(resp.String(), "token").String()
 
 	return nil
 }
 
 func createPublicDid() error {
 	log.Info("Create a new random local did")
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/wallet/did/create", jwtToken, []byte("{}"))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
-	did = gjson.Get(string(respAsBytes), "result.did").String()
-	verKey = gjson.Get(string(respAsBytes), "result.verkey").String()
+	resp, err := client.R().
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/wallet/did/create")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
+	did = gjson.Get(resp.String(), "result.did").String()
+	verKey = gjson.Get(resp.String(), "result.verkey").String()
 	log.Info("created did: " + did + ", verkey: " + verKey)
 
-	params := "?did=" + did +
-		"&verkey=" + verKey +
-		"&alias=" + walletName +
-		"&role=ENDORSER"
 	log.Info("Register the did to the ledger as a ENDORSER by steward")
-	respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/ledger/register-nym"+params, stewardJwtToken, []byte("{}"))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
+	resp, err = client.R().
+		SetQueryParam("did", did).
+		SetQueryParam("verkey", verKey).
+		SetQueryParam("alias", walletName).
+		SetQueryParam("role", "ENDORSER").
+		SetAuthToken(stewardJwtToken).
+		Post(config.AgentApiUrl+"/ledger/register-nym")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
 
-	params = "?did=" + did
 	log.Info("Assign the did to public: "+did)
-	respAsBytes, err = utils.RequestPost(config.AgentApiUrl, "/wallet/did/public"+params, jwtToken, []byte("{}"))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
+	resp, err = client.R().
+		SetQueryParam("did", did).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/wallet/did/public")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
 
 	return nil
 }
@@ -391,10 +412,13 @@ func createSchema() error {
 		"attributes": ["name", "date", "degree", "age", "photo"]
 	}`)
 	log.Info("Create a new schema on the ledger:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/schemas", jwtToken, []byte(body))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
-	schemaID = gjson.Get(string(respAsBytes), "schema_id").String()
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/schemas")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
+	schemaID = gjson.Get(resp.String(), "schema_id").String()
 
 	return nil
 }
@@ -407,10 +431,13 @@ func createCredentialDefinition() error {
 		"revocation_registry_size": 10
 	}`)
 	log.Info("Create a new credential definition on the ledger:" + utils.PrettyJson(body))
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/credential-definitions", jwtToken, []byte(body))
-	if err != nil { log.Error("utils.RequestPost() error:", err.Error()); return err }
-	log.Info("response: " + string(respAsBytes))
-	credDefID = gjson.Get(string(respAsBytes), "credential_definition_id").String()
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/credential-definitions")
+	if err != nil { log.Error(err); return err }
+	log.Info("response: ", resp)
+	credDefID = gjson.Get(resp.String(), "credential_definition_id").String()
 
 	return nil
 }
