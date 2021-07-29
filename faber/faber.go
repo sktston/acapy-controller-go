@@ -66,7 +66,7 @@ func startWebHookServer() (*http.Server, error) {
 	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationUrl)
 	router.GET("/invitation-qr", createInvitationUrlQr)
-	router.POST("/webhooks/topic/:topic", handleMessage)
+	router.POST("/webhooks/topic/:topic", handleEvent)
 
 	// Get port from webhookUrl
 	if config.IssueOnly == true {
@@ -185,7 +185,7 @@ func createInvitationUrlQr(ctx *gin.Context) {
 	return
 }
 
-func handleMessage(ctx *gin.Context) {
+func handleEvent(ctx *gin.Context) {
 	var (
 		topic, state string
 		body         map[string]interface{}
@@ -200,10 +200,8 @@ func handleMessage(ctx *gin.Context) {
 	}
 
 	topic = ctx.Param("topic")
-	if topic == "problem_report" {
-		state = ""
-	} else {
-		state = body["state"].(string)
+	if val, ok := body["state"]; ok {
+		state = val.(string)
 	}
 
 	switch topic {
