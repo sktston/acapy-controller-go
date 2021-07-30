@@ -190,20 +190,13 @@ func createInvitationUrlQr(ctx *gin.Context) {
 }
 
 func handleEvent(ctx *gin.Context) {
-	var (
-		topic, state string
-		body         map[string]interface{}
-		err          error
-	)
+	var body map[string]interface{}
+	err := ctx.ShouldBindJSON(&body)
+	if err != nil { log.Error(err); utils.HttpError(ctx, http.StatusBadRequest, err); return }
 
-	err = ctx.ShouldBindJSON(&body)
-	if err != nil {
-		log.Error("ShouldBindJSON() error:", err.Error())
-		utils.HttpError(ctx, http.StatusBadRequest, err)
-		return
-	}
+	topic := ctx.Param("topic")
 
-	topic = ctx.Param("topic")
+	var state string
 	if val, ok := body["state"]; ok {
 		state = val.(string)
 	}
