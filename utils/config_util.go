@@ -35,8 +35,7 @@ type ControllerConfig struct {
 
 	// Alice only from json file
 	HolderWebhookUrl string `json:"HolderWebhookUrl" validate:"omitempty,url"`
-	IssuerContURL    string `json:"IssuerContURL" validate:"omitempty,url"`
-	VerifierContURL  string `json:"VerifierContURL" validate:"omitempty,url"`
+	IssuerContUrl    string `json:"IssuerContUrl" validate:"omitempty,url"`
 
 	// Faber only, Command line parameters
 	IssueOnly  bool

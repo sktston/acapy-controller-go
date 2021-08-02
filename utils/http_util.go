@@ -8,6 +8,7 @@ package utils
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -201,4 +202,19 @@ func PrettyJson(jsonString string, indent ...string) string {
 func GetRandomInt(min int, max int) int {
 	rand.Seed(time.Now().UnixNano())
 	return rand.Intn(max-min+1) + min
+}
+
+func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
+	token := strings.Split(invitationUrl, "?c_i=")
+	if len(token) != 2 {
+		err := errors.New("invalid invitation-url format")
+		log.Error(err)
+		return nil, err
+	}
+	invitation, err := base64.StdEncoding.DecodeString(token[1])
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+	return invitation, nil
 }

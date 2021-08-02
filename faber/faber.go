@@ -29,7 +29,7 @@ import (
 var (
 	client                                       = resty.New()
 	config                                       utils.ControllerConfig
-	webhookUrl, did, verKey, schemaID, credDefId string
+	did, verKey, schemaID, credDefId string
 	stewardJwtToken, jwtToken, walletId          string
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
@@ -83,8 +83,7 @@ func startWebHookServer() (*http.Server, error) {
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
 	// Get port from webhookUrl
-	webhookUrl = config.IssuerWebhookUrl
-	urlParse, _ := url.Parse(webhookUrl)
+	urlParse, _ := url.Parse(config.IssuerWebhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -135,7 +134,7 @@ func provisionController() error {
 
 	log.Info().Msg("Configuration of faber:")
 	log.Info().Msg("- wallet name: " + walletName)
-	log.Info().Msg("- webhook url: " + webhookUrl)
+	log.Info().Msg("- webhook url: " + config.IssuerWebhookUrl)
 	log.Info().Msg("- wallet ID: " + walletId)
 	log.Info().Msg("- wallet type: " + config.WalletType)
 	log.Info().Msg("- jwt token: " + jwtToken)
@@ -313,7 +312,7 @@ func createWallet() error {
 		"wallet_type": "`+config.WalletType+`",
 		"label": "`+walletName+".label"+`",
 		"image_url": "`+imageUrl+`",
-		"wallet_webhook_urls": ["`+webhookUrl+`"]
+		"wallet_webhook_urls": ["`+config.IssuerWebhookUrl+`"]
 	}`
 	log.Info().Msg("Create a new wallet" + utils.PrettyJson(body))
 	resp, err := client.R().
