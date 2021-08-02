@@ -72,8 +72,10 @@ func main() {
 func startWebHookServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
-	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 	router.Use(gin.Recovery())
+
+	// Use middleware to use zerolog
+	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 
 	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationUrl)
