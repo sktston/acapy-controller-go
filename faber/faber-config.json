@@ -2,7 +2,6 @@
   "AgentApiUrl"        : "http://localhost:8021",
   "WalletType"         : "indy",
   "IssuerWebhookUrl"   : "http://localhost:8040/webhooks",
-  "VerifierWebhookUrl" : "http://localhost:8050/webhooks",
   "PublicInvitation"   : true,
   "RevokeAfterIssue"   : false,
   "Debug"              : false

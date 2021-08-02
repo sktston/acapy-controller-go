@@ -175,8 +175,6 @@ func PrettyJson(jsonString string, indent ...string) string {
 		marshalIndent string
 	)
 
-	jsonString = strings.ReplaceAll(jsonString, "\n", "")
-
 	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
 	if err != nil {
 		// Caution: no error handling for easy use

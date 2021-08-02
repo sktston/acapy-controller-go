@@ -9,7 +9,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"github.com/gin-contrib/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog"
@@ -17,6 +17,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"github.com/sktston/acapy-controller-go/utils"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"net"
 	"net/http"
 	"net/url"
@@ -28,7 +29,7 @@ import (
 var (
 	client                                       = resty.New()
 	config                                       utils.ControllerConfig
-	webhookUrl, did, verKey, schemaID, credDefID string
+	webhookUrl, did, verKey, schemaID, credDefId string
 	stewardJwtToken, jwtToken, walletId          string
 
 	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
@@ -41,6 +42,7 @@ var (
 
 func main() {
 	// Setting log
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read faber-config.json file
@@ -70,8 +72,8 @@ func main() {
 func startWebHookServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
+	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
 
 	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationUrl)
@@ -79,14 +81,7 @@ func startWebHookServer() (*http.Server, error) {
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
 	// Get port from webhookUrl
-	if config.IssueOnly == true {
-		webhookUrl = config.IssuerWebhookUrl
-	} else if config.VerifyOnly == true {
-		webhookUrl = config.VerifierWebhookUrl
-	} else {
-		webhookUrl = config.IssuerWebhookUrl
-	}
-
+	webhookUrl = config.IssuerWebhookUrl
 	urlParse, _ := url.Parse(webhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
@@ -145,7 +140,7 @@ func provisionController() error {
 	log.Info().Msg("- did: " + did)
 	log.Info().Msg("- verification key: " + verKey)
 	log.Info().Msg("- schema ID: " + schemaID)
-	log.Info().Msg("- credential definition ID: " + credDefID)
+	log.Info().Msg("- credential definition ID: " + credDefId)
 
 	log.Info().Msg("Initialization is done.")
 	log.Info().Msg("Run alice now.")
@@ -153,38 +148,43 @@ func provisionController() error {
 	return nil
 }
 
+func requestCreateInvitation() (*resty.Response, error) {
+	return client.R().
+		SetQueryParam("public", strconv.FormatBool(config.PublicInvitation)).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/connections/create-invitation")
+}
 func createInvitation(ctx *gin.Context) {
-	params := "?public="+strconv.FormatBool(config.PublicInvitation)
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	resp, err := requestCreateInvitation()
 	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
-	log.Info().Msg("response: " + string(respAsBytes))
+	log.Info().Msg("response: "+resp.String())
 
-	invitation := gjson.Get(string(respAsBytes), "invitation").String()
+	invitation := gjson.Get(resp.String(), "invitation").String()
+	log.Info().Msg("createInvitation: "+invitation)
 	ctx.String(http.StatusOK, invitation)
 
 	return
 }
 
 func createInvitationUrl(ctx *gin.Context) {
-	params := "?public="+strconv.FormatBool(config.PublicInvitation)
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	resp, err := requestCreateInvitation()
 	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
-	log.Info().Msg("response: " + string(respAsBytes))
+	log.Info().Msg("response: "+resp.String())
 
-	invitationUrl := gjson.Get(string(respAsBytes), "invitation_url").String()
+	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
+	log.Info().Msg("createInvitationUrl: "+invitationUrl)
 	ctx.String(http.StatusOK, invitationUrl)
 
 	return
 }
 
 func createInvitationUrlQr(ctx *gin.Context) {
-	params := "?public="+strconv.FormatBool(config.PublicInvitation)
-	respAsBytes, err := utils.RequestPost(config.AgentApiUrl, "/connections/create-invitation"+params, jwtToken, []byte("{}"))
+	resp, err := requestCreateInvitation()
 	if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
-	log.Info().Msg("response: " + string(respAsBytes))
+	log.Info().Msg("response: "+resp.String())
 
-	invitationUrl := gjson.Get(string(respAsBytes), "invitation_url").String()
-
+	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
+	log.Info().Msg("createInvitationUrlQr: "+invitationUrl)
 	// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
 	qrCode, _ := qrcode.New(invitationUrl, qrcode.Low)
 	qrCodeString := qrCode.ToSmallString(false)
@@ -197,94 +197,50 @@ func handleEvent(ctx *gin.Context) {
 	var body map[string]interface{}
 	err := ctx.ShouldBindJSON(&body)
 	if err != nil { log.Error().Err(err); utils.HttpError(ctx, http.StatusBadRequest, err); return }
-
 	topic := ctx.Param("topic")
-
 	var state string
 	if val, ok := body["state"]; ok {
 		state = val.(string)
 	}
 
+	bodyAsBytes, _ := json.Marshal(body)
+	log.Info().Msg("handleEvent >>> topic:"+topic+", state:"+state+", body:"+string(bodyAsBytes))
+
 	switch topic {
-	case "connections":
-		// When connection with alice is done, send credential offer
-		if state == "active" {
-			if config.VerifyOnly == false {
-				log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer")
-				err = sendCredentialOffer(body["connection_id"].(string))
-				if err != nil {
-					utils.HttpError(ctx, http.StatusInternalServerError, err)
-					return
-				}
-			} else {
-				log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest")
-				err = sendProofRequest(body["connection_id"].(string))
-				if err != nil {
-					utils.HttpError(ctx, http.StatusInternalServerError, err)
-					return
-				}
-			}
-		} else {
-			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
-		}
-
 	case "issue_credential":
-		// When credential is issued and acked, send proof(presentation) request
-		if state == "credential_acked" {
-			if config.SupportRevoke == true && config.RevokeAfterIssue == true {
-				err = revokeCredential(body["revoc_reg_id"].(string), body["revocation_id"].(string))
-				if err != nil {
-					utils.HttpError(ctx, http.StatusInternalServerError, err)
-					return
-				}
-			}
+		if state == "proposal_received" {
+			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer()")
 
-			if config.IssueOnly == false {
-				log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest")
-				err = sendProofRequest(body["connection_id"].(string))
-				if err != nil {
-					utils.HttpError(ctx, http.StatusInternalServerError, err)
-					return
-				}
-			}
+			err = sendCredentialOffer(body["credential_exchange_id"].(string))
+			if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+		} else if state == "credential_acked" {
+			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> issue credential successfully")
 
-		} else {
-			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
+			if config.RevokeAfterIssue {
+				log.Info().Msg("- RevokeAfterIssue is true -> revokeCredential()")
+				err = revokeCredential(body["credential_exchange_id"].(string))
+				if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+			}
 		}
 
 	case "present_proof":
-		// When proof is verified, print the result
-		if state == "verified" {
-			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> Print result")
-			bodyAsBytes, err := json.MarshalIndent(body, "", "")
-			if err != nil {
-				utils.HttpError(ctx, http.StatusInternalServerError, err)
-				return
-			}
-			err = validateProofResult(string(bodyAsBytes))
-			if err != nil {
-				utils.HttpError(ctx, http.StatusInternalServerError, err)
-				return
-			}
-		} else {
-			log.Info().Msg("- Case (topic:topic:" + topic + ", state:" + state + ") -> No action in demo")
+		if state == "proposal_received" {
+			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest()")
+
+			err = sendProofRequest(body["connection_id"].(string))
+			if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
+		} else if state == "verified" {
+			log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> printProofResult()")
+
+			err = printProofResult(body)
+			if err != nil { utils.HttpError(ctx, http.StatusInternalServerError, err); return }
 		}
 
+	case "connections":
 	case "basicmessages":
-		log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> Print message")
-		log.Info().Msg("  - message:" + body["content"].(string))
-
 	case "revocation_registry":
-		log.Info().Msg("- Case (topic:" + topic + ", state:" + state + ") -> No action in demo")
-
 	case "problem_report":
-		bodyAsBytes, err := json.MarshalIndent(body, "", "  ")
-		if err != nil {
-			utils.HttpError(ctx, http.StatusInternalServerError, err)
-			return
-		}
-		log.Warn().Msg("- Case (topic:" + topic + ") -> Print body")
-		log.Warn().Msg("  - body:" + string(bodyAsBytes))
+	case "issuer_cred_rev":
 
 	default:
 		log.Warn().Msg("- Warning Unexpected topic:" + topic)
@@ -305,11 +261,11 @@ func obtainStewardJwtToken() error {
 	wallets := gjson.Get(resp.String(), "results").Array()
 	if len(wallets) == 0 {
 		// stewardWallet not exists -> create stewardWallet and get jwt token
-		body := utils.JsonString(`{
+		body := `{
 			"wallet_name": "`+stewardWallet+`",
 			"wallet_key": "`+stewardWallet+".key"+`",
 			"wallet_type": "`+config.WalletType+`"
-		}`)
+		}`
 		log.Info().Msg("Not found steward wallet - Create a new steward wallet: "+utils.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
@@ -318,7 +274,7 @@ func obtainStewardJwtToken() error {
 		log.Info().Msg("response: "+resp.String())
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 
-		body = utils.JsonString(`{ "seed": "`+stewardSeed+`" }`)
+		body = `{ "seed": "`+stewardSeed+`" }`
 		log.Info().Msg("Create a steward did: "+utils.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
@@ -349,15 +305,15 @@ func obtainStewardJwtToken() error {
 }
 
 func createWallet() error {
-	body := utils.JsonString(`{
+	body := `{
 		"wallet_name": "`+walletName+`",
 		"wallet_key": "`+walletName+".key"+`",
 		"wallet_type": "`+config.WalletType+`",
 		"label": "`+walletName+".label"+`",
 		"image_url": "`+imageUrl+`",
 		"wallet_webhook_urls": ["`+webhookUrl+`"]
-	}`)
-	log.Info().Msg("Create a new wallet:" + utils.PrettyJson(body))
+	}`
+	log.Info().Msg("Create a new wallet" + utils.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(config.AgentApiUrl+"/multitenancy/wallet")
@@ -403,11 +359,11 @@ func createPublicDid() error {
 }
 
 func createSchema() error {
-	body := utils.JsonString(`{
+	body := `{
 		"schema_name": "degree_schema",
 		"schema_version": "`+version+`",
 		"attributes": ["name", "date", "degree", "age", "photo"]
-	}`)
+	}`
 	log.Info().Msg("Create a new schema on the ledger:" + utils.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
@@ -421,12 +377,12 @@ func createSchema() error {
 }
 
 func createCredentialDefinition() error {
-	body := utils.JsonString(`{
+	body := `{
 		"schema_id": "`+schemaID+`",
 		"tag": "tag.`+version+`",
 		"support_revocation": true,
 		"revocation_registry_size": 10
-	}`)
+	}`
 	log.Info().Msg("Create a new credential definition on the ledger:" + utils.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
@@ -434,106 +390,145 @@ func createCredentialDefinition() error {
 		Post(config.AgentApiUrl+"/credential-definitions")
 	if err != nil { log.Error().Err(err); return err }
 	log.Info().Msg("response: "+resp.String())
-	credDefID = gjson.Get(resp.String(), "credential_definition_id").String()
+	credDefId = gjson.Get(resp.String(), "credential_definition_id").String()
 
 	return nil
 }
 
-func sendCredentialOffer(connectionID string) error {
-	log.Info().Msg("sendCredentialOffer >>> connectionID:" + connectionID)
+func sendCredentialOffer(credExId string) error {
+	encodedImage := "base64EncodedJpegImage"
 
-	body := utils.PrettyJson(`{
-		"connection_id":"`+connectionID+`",
-		"cred_def_id"  :"`+credDefID+`",
-		"credential_preview": {
-			"@type": "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/issue-credential/1.0/credential-preview",
-			"attributes": [
-				{ "name": "name", "value": "alice" },
-				{ "name": "date", "value": "05-2018" },
-				{ "name": "degree", "value": "maths" },
-				{ "name": "age", "value": "25" }
-			]
+	body := `{
+		"counter_proposal": {
+			"cred_def_id"  :"`+ credDefId +`",
+			"credential_proposal": {
+				"attributes": [
+					{ "name": "name", "value": "alice" },
+					{ "name": "date", "value": "05-2018" },
+					{ "name": "degree", "value": "maths" },
+					{ "name": "age", "value": "25" },
+					{ "name": "photo", "value": "`+encodedImage+`", "mime-type": "image/jpeg" }
+				]
+			}
 		}
-	}`, "")
-
-	_, err := utils.RequestPost(config.AgentApiUrl, "/issue-credential/send-offer", walletName, []byte(body))
+	}`
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/issue-credential/records/"+credExId+"/send-offer")
 	if err != nil { log.Error().Err(err); return err }
+	log.Info().Msg("response: "+resp.String())
 
-	log.Info().Msg("sendCredentialOffer <<< done")
 	return nil
 }
 
-func sendProofRequest(connectionID string) error {
-	log.Info().Msg("sendCredentialOffer >>> connectionID:" + connectionID)
+func sendProofRequest(connectionId string) error {
+	curUnixTime := strconv.FormatInt(time.Now().Unix(), 10)
 
-	body := utils.PrettyJson(`{
-		"connection_id": "`+connectionID+`",
+	body := `{
+		"connection_id": "`+connectionId+`",
 		"proof_request": {
 			"name": "proof_name",
 			"version": "1.0",
 			"requested_attributes": {
 				"attr_name": {
 					"name": "name",
-					"restrictions": [ { "schema_name": "degree_schema" } ]
+					"non_revoked": { "from": 0, "to": `+curUnixTime+` },
+					"restrictions": [ { "cred_def_id": "`+credDefId+`" } ]
 				},
 				"attr_date": {
 					"name": "date",
-					"restrictions": [ { "schema_name": "degree_schema" } ]
+					"non_revoked": { "from": 0, "to": `+curUnixTime+` },
+					"restrictions": [ { "cred_def_id": "`+credDefId+`" } ]
 				},
 				"attr_degree": {
 					"name": "degree",
-					"restrictions": [ { "schema_name": "degree_schema" } ]
+					"non_revoked": { "from": 0, "to": `+curUnixTime+` },
+					"restrictions": [ { "cred_def_id": "`+credDefId+`" } ]
+				},
+				"attr_photo": {
+					"name": "photo",
+					"non_revoked": { "from": 0, "to": `+curUnixTime+` },
+					"restrictions": [ { "cred_def_id": "`+credDefId+`" } ]
 				}
 			},
 			"requested_predicates": {
 				"pred_age": {
-					"name"        : "age",
-					"p_type"      : ">=",
-					"p_value"     : 20,
-					"restrictions": [ { "schema_name": "degree_schema" } ]
+					"name": "age",
+					"p_type": ">=",
+					"p_value": 20,
+					"non_revoked": { "from": 0, "to": `+curUnixTime+` },
+					"restrictions": [ { "cred_def_id": "`+credDefId+`" } ]
 				}
 			}
 		}
-	}`, "")
-
-	_, err := utils.RequestPost(config.AgentApiUrl, "/present-proof/send-request", walletName, []byte(body))
+	}`
+	log.Info().Msg("body: "+body)
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/present-proof/send-request")
 	if err != nil { log.Error().Err(err); return err }
+	log.Info().Msg("response: "+resp.String())
 
-	log.Info().Msg("sendProofRequest <<< done")
 	return nil
 }
 
-func revokeCredential(revRegId string, credRevId string) error {
-	log.Info().Msg("revokeCredential >>> revRegId:" + revRegId + ", credRevId:" + credRevId)
-
-	body := utils.PrettyJson(`{
-		"rev_reg_id": "`+revRegId+`",
-		"cred_rev_id": "`+credRevId+`",
+func revokeCredential(credExId string) error {
+	body := `{
+		"cred_ex_id": "`+credExId+`",
 		"publish": true
-	}`, "")
-
-	_, err := utils.RequestPost(config.AgentApiUrl, "/revocation/revoke", walletName, []byte(body))
+	}`
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(config.AgentApiUrl+"/revocation/revoke")
 	if err != nil { log.Error().Err(err); return err }
+	log.Info().Msg("response: "+resp.String())
 
-	log.Info().Msg("revokeCredential <<< done")
 	return nil
 }
 
-func validateProofResult(body string) error {
-	log.Info().Msg("validateProofResult >>> start")
-
-	requestedProof := gjson.Get(body, "presentation.requested_proof").String()
-	if requestedProof == "" {
-		return errors.New("requestedProof does not exist")
+func printProofResult(body map[string]interface{}) error {
+	if body["verified"] != "true" {
+		log.Warn().Msg("proof is not verified")
+		return nil
 	}
-	log.Info().Msg("  - Proof requested:" + utils.PrettyJson(requestedProof))
 
-	verified := gjson.Get(body, "verified").String()
-	if verified == "" {
-		return errors.New("verified does not exist")
+	bodyAsBytes, _ := json.Marshal(body)
+
+	presRequest := gjson.Get(string(bodyAsBytes), "presentation_request").String()
+
+	// add revealed value to presRequest
+	requestedAttrs := gjson.Get(presRequest, "requested_attributes").Map()
+	for key, _ := range requestedAttrs {
+		value := "unrevealed"
+		if gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key).Exists() {
+			value = gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key+".raw").String()
+		}
+		presRequest, _ = sjson.Set(presRequest, "requested_attributes."+key+".value", value)
 	}
-	log.Info().Msg("  - Proof validation:" + verified)
 
-	log.Info().Msg("validateProofResult <<< done")
+	// print Attributes
+	requestedAttrs = gjson.Get(presRequest, "requested_attributes").Map()
+	log.Info().Msg("Requested Attributes")
+	for key, val := range requestedAttrs {
+		valMap := val.Map()
+		name := valMap["name"].String()
+		value := valMap["value"].String()
+		log.Info().Msg("- "+key+" - "+name+": "+value)
+	}
+
+	// print Predicates
+	requestedPreds := gjson.Get(presRequest, "requested_predicates").Map()
+	log.Info().Msg("Requested Predicates")
+	for key, val := range requestedPreds {
+		valMap := val.Map()
+		name := valMap["name"].String()
+		pType := valMap["p_type"].String()
+		pValue := valMap["p_value"].String()
+		log.Info().Msg("- "+key+" - "+name+": "+pType+" "+pValue)
+	}
+
 	return nil
 }
