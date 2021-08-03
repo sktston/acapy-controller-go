@@ -85,7 +85,7 @@ $ ./alice
 |  | **auto** POST /issue-credential/records/{credExId}/store | issue_credential, credential_acked | issue_credential, credential_acked |
 
 ### Presentation
-| Issuer API | Holder API | Issuer webhook (topic, state, *msg_type) | Holder webhook (topic, state, *msg_type) |
+| Issuer API | Holder API | Issuer webhook (topic, state) | Holder webhook (topic, state) |
 |---|---|---|---|
 |  | POST /present-proof/send-proposal | present_proof, proposal_received | present_proof, proposal_sent |
 | POST /present-proof/send-request |  | present_proof, request_sent | present_proof, request_received |
