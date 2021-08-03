@@ -1,8 +1,6 @@
 # Controller of aries-cloudagent-python (Go version)
 - Implementation of [Hyperledger Aries Cloud Agent - Python(ACA-Py)](https://github.com/hyperledger/aries-cloudagent-python) compatible Controller.
 
-- Porting the initial implementation of java by the [Dr. Baekje Seong](https://github.com/baegjae) in go language and all features  follow the [java version](https://github.com/sktston/acapy-controller-java)
-
 ## Repository structure
 The controller implementation is in directory [alice](./alice) & [faber](./faber). 
 
@@ -10,13 +8,13 @@ Repository structure details:
 ```
 /
 ├── alice/       # Alice (Holder) controller implementation
-├── alice-multi/ # Multi-Alice (Multi-holder) controller implementation
 ├── faber/       # Faber (Issuer&Verifier) controller implementation
-└── utils/       # Common utility functions 
+├── utils/       # Common utility functions 
+└── docker/      # docker-compose.yml to run ACA-Py agent
 ```
 
 ## Prerequisite 
-- Go version 1.14 or higher for source compilation
+- Go version 1.16 or higher for source compilation
 - Docker & docker-compose for running ACA-Py
 ---
 
@@ -24,75 +22,73 @@ Repository structure details:
 ### Run cloud agency with multitenancy support
 - ACA-Py agency opens 8020 port (endpoint) and 8021 port (admin). 
 Check admin (swagger API) http://localhost:8021/api/doc
-- Refer to [java implementation](https://github.com/sktston/acapy-controller-java)
 ```
-$ mkdir ~/work
-$ cd ~/work
-$ git clone https://github.com/sktston/acapy-controller-java.git
-$ cd ~/work/acapy-controller-java/docker
+$ cd docker
 $ docker-compose up --build
 ```
 
 ### Run Faber controller
-- Faber controller opens 8022 port.
-- It receives webhook message from Faber agent by POST http://host.docker.internal:8022/webhooks/topic/{topic}/ 
-- Also, It presents invitation by GET http://localhost:8022/invitation
+- Faber controller opens 8040 port.
+- It receives webhook message from Faber agent by POST http://localhost:8040/webhooks/topic/{topic}/ 
+- Also, It presents invitation-url by GET http://localhost:8040/invitation-url
 - Detailed configuration is in [faber-config.json](./faber/faber-config.json)
 ```
-$ mkdir ~/work
-$ cd ~/work
-$ git clone https://github.com/sktston/acapy-controller-go.git
-$ cd ~/work/acapy-controller-go/faber
+$ cd faber
 $ go build
 $ ./faber
 ```
 
 ### Run Alice controller
-- Alice controller opens 8023 port. 
-- It receives webhook message from alice agent by POST http://host.docker.internal:8023/webhooks/topic/{topic}/ 
+- Alice controller opens 8050 port. 
+- It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/ 
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
 - Detailed configuration is in [alice-config.json](./alice/alice-config.json)
 ```
-$ cd ~/work/acapy-controller-go/alice
+$ cd alice
 $ go build
 $ ./alice
 ```
-### Separation of issuer and verifier
-- In the above example, Faber executes issuer and verifier at the same time. However, in the real environment, issuer and verifier are separated.
-- When executing Faber, you can specify whether to play only the issuer role or the verifier role with the '-i' option and the '-v' option.
-- Set *IssuerWebhookUrl (ex: http://172.168.0.100:8022/webhooks)* and *VerifierWebhookUrl (ex: http://172.168.0.101:8032/webhooks)* of [faber-config.json](./faber/faber-config.json) file, respectively. 
-- Also, set *IssuerContURL (ex: http://172.168.0.100:8022)* and *VerifierContURL (ex: http://172.168.0.101:8032)* of [alice-config.json](./alice/alice-config.json), respectively.
-```
-Terminal 1: Issuer
-$ cd ~/work/acapy-controller-go/faber
-$ ./faber -i
 
-Terminal 2: Verifier
-$ cd ~/work/acapy-controller-go/faber
-$ ./faber -v
+## Work flow
+### Provision (Issuer or Holder)
+| Public API | Issuer API | Steward API |
+|---|---|---|
+| POST /multitenancy/wallet |  |  |
+|  | POST /wallet/did/create |  |
+|  |  | POST /ledger/register-nym |
+|  | POST /wallet/did/public |  |
+- Holder only needs POST /multitenancy/wallet.
 
-Terminal 3: Holder
-$ cd ~/work/acapy-controller-go/alice
-$ ./alice
-```
+### Credential Preparation (Issuer)
+| Issuer API | Issuer webhook (topic, state) |
+|---|---|
+| POST /schemas |  |
+| POST /credential-definitions | revocation_registry, init generated posted active |
 
-### Run Multi-Alice controller
+### Connection
+| Issuer API | Holder API | Issuer webhook (topic, state) | Holder webhook (topic, state) |
+|---|---|---|---|
+| POST /connections/create-invitation |  |  |  |
+|  | POST /connections/receive-invitation |  | connections, invitation |
+|  | **auto** POST /connections/{conn_id}/accept-invitation | connections, request | connections, request |
+| **auto** POST /connections/{conn_id}/accept-request |  | connections, response | connections, response |
+|  | **auto** POST /connections/{conn_id}/send-ping | connections, active | connections, active |
 
-- Multiple holders (Alice) simultaneously execute issue and verify
-- You can specify the number of holders and the total number of cycles (1 cycle = 1 issue & 1 verify) to be performed.
-- Details of each parameter can be checked with 'alice-multi --help'.
-```
-Terminal 1: Issuer
-$ cd ~/work/acapy-controller-go/faber
-$ ./faber -i
+### Issue Credential
+| Issuer API | Holder API | Issuer webhook (topic, state) | Holder webhook (topic, state) |
+|---|---|---|---|
+|  | POST /issue-credential/send-proposal | issue_credential, proposal_received | issue_credential, proposal_sent |
+| POST /issue-credential/records/{credExId}/send-offer |  | issue_credential, offer_sent | issue_credential, offer_received |
+|  | POST /issue-credential/records/{credExId}/send-request | issue_credential, request_received | issue_credential, request_sent |
+| **auto** POST /issue-credential/records/{credExId}/issue |  | issue_credential, credential_issued | issue_credential, credential_received |
+|  |  | issuer_cred_rev, issued |  |
+|  | **auto** POST /issue-credential/records/{credExId}/store | issue_credential, credential_acked | issue_credential, credential_acked |
 
-Terminal 2: Verifier
-$ cd ~/work/acapy-controller-go/faber
-$ ./faber -v
-
-Terminal 3: Multi-Holder 
-(2 holder, 4 cycles -> 
-Each holder performs 2 issue & verify)
-$ cd ~/work/acapy-controller-go/alice-multi
-$ ./alice-multi -n 2 -c 4 
-```
+### Presentation
+| Issuer API | Holder API | Issuer webhook (topic, state, *msg_type) | Holder webhook (topic, state, *msg_type) |
+|---|---|---|---|
+|  | POST /present-proof/send-proposal | present_proof, proposal_received | present_proof, proposal_sent |
+| POST /present-proof/send-request |  | present_proof, request_sent | present_proof, request_received |
+|  | GET /present-proof/records/{presExId}/credentials |  |  |
+|  | POST /present-proof/records/{presExId}/send-presentation | present_proof, presentation_received | present_proof, presentation_sent |
+| **auto** POST /present-proof/records/{presExId}/verify-presentation |  | present_proof, verified | present_proof, presentation_acked |
