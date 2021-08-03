@@ -62,7 +62,7 @@ func main() {
 	defer func() { _ = shutdownWebHookServer(httpServer) }()
 
 	// Start Faber
-	//err = provisionController()
+	err = provisionController()
 	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	log.Info().Msg("Waiting web hook event from agent...")
