@@ -1,6 +1,6 @@
 /**************************************************
  * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
- *           Baegjae Sung (baegjae@gmail.com)     *
+ *           Ethan Sung (baegjae@gmail.com)       *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -9,14 +9,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/gin-contrib/logger"
-	"github.com/gin-gonic/gin"
-	"github.com/go-resty/resty/v2"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-	"github.com/sktston/acapy-controller-go/utils"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +17,15 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/gin-contrib/logger"
+	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/sktston/acapy-controller-go/utils"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var (

@@ -1,6 +1,6 @@
 /**************************************************
  * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
- *           Baegjae Sung (baegjae@gmail.com)     *
+ *           Ethan Sung (baegjae@gmail.com)       *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -10,12 +10,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
 	"io/ioutil"
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 func HttpError(ctx *gin.Context, status int, err error, holderId ...string) {

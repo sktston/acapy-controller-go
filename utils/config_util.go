@@ -1,6 +1,6 @@
 /**************************************************
- * Author  : Jihyuck Yun                          *
- *           dr.jhyun@gmail.com                   *
+ * Author  : Jihyuck Yun (dr.jhyun@gmail.com)     *
+ *           Ethan Sung (baegjae@gmail.com)       *
  * since July 28, 2020                            *
  **************************************************/
 
@@ -8,13 +8,14 @@ package utils
 
 import (
 	"encoding/json"
-	"github.com/go-playground/validator/v10"
-	"github.com/rs/zerolog/log"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/rs/zerolog/log"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type ControllerConfig struct {
