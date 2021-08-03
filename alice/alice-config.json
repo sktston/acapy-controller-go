@@ -1,6 +1,6 @@
 {
   "AgentApiUrl"      : "http://localhost:8021",
-  "WalletType"         : "indy",
+  "WalletType"       : "indy",
   "HolderWebhookUrl" : "http://localhost:8050/webhooks",
   "IssuerContUrl"    : "http://localhost:8040",
   "Debug"            : false

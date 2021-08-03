@@ -45,11 +45,13 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read alice-config.yaml file
-	err := config.ReadConfig("./alice-config.json", "holder")
+	err := config.ReadConfig("./alice-config.json")
 	if err != nil { log.Fatal().Err(err) }
 
-	// Set debug mode
-	utils.SetDebugMode(config.Debug)
+	// Setting debug mode
+	if config.Debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 
 	// Set client configuration
 	client.SetTimeout(30 * time.Minute)
