@@ -23,14 +23,14 @@ import (
 func HttpError(ctx *gin.Context, status int, err error) {
 	bodyAsBytes, _ := ioutil.ReadAll(ctx.Request.Body)
 
-	body := `{
+	jsonLog := `{
 		"Method": "`+ctx.Request.Method+`",
 		"RequestURI": "`+ctx.Request.RequestURI+`",
 		"Content-Type": "`+ctx.Request.Header.Get("Content-Type")+`",
 		"ContentLength": "`+strconv.FormatInt(ctx.Request.ContentLength, 10)+`",
 		"Body": "`+string(bodyAsBytes)+`"
 	}`
-	log.Warn().Err(err).Msg(JsonString(body))
+	log.Warn().Err(err).Msg(JsonString(jsonLog))
 
 	errStruct := gin.H{
 		"Code":    status,
