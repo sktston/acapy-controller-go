@@ -72,7 +72,7 @@ func (config *ControllerConfig) ReadConfig(fileName string) error {
 
 func GetOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 	defer func() { _ = conn.Close() }()
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)

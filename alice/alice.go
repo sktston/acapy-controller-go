@@ -46,7 +46,7 @@ func main() {
 
 	// Read alice-config.yaml file
 	err := config.ReadConfig("./alice-config.json")
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	// Set log level debug
 	utils.SetLogLevelDebug(config.Debug)
@@ -57,7 +57,7 @@ func main() {
 
 	// Start web hook server
 	httpServer, err := startWebHookServer()
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	// Set exit signal
 	exitSignal := make(chan os.Signal)
@@ -65,12 +65,12 @@ func main() {
 
 	// Start Alice
 	err = provisionController()
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	// Receive invitation
 	log.Info().Msg("Receive invitation from faber controller")
 	err = receiveInvitation()
-	if err != nil { log.Error().Err(err) }
+	if err != nil { log.Error().Err(err).Msg("") }
 
 	// Wait exit signal
 	<-exitSignal
@@ -99,7 +99,7 @@ func startWebHookServer() (*http.Server, error) {
 	}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err)
+			log.Fatal().Err(err).Msg("")
 		}
 	}()
 	log.Info().Msg("Listen on http://" + utils.GetOutboundIP().String() + port)
@@ -110,7 +110,7 @@ func startWebHookServer() (*http.Server, error) {
 func shutdownWebHookServer(httpServer *http.Server) error {
 	// Shutdown http server gracefully
 	err := httpServer.Shutdown(context.Background())
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("Http server shutdown successfully")
 
 	return nil
@@ -119,7 +119,7 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 func provisionController() error {
 	log.Info().Msg("Create wallet")
 	err := createWallet()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 
 	log.Info().Msg("Configuration of alice:")
 	log.Info().Msg("- wallet name: " + walletName)
@@ -134,7 +134,7 @@ func provisionController() error {
 func handleEvent(ctx *gin.Context) {
 	var body map[string]interface{}
 	err := ctx.ShouldBindJSON(&body)
-	if err != nil { log.Error().Err(err); utils.HttpError(ctx, http.StatusBadRequest, err); return }
+	if err != nil { utils.HttpError(ctx, http.StatusBadRequest, err); return }
 	topic := ctx.Param("topic")
 	var state string
 	if val, ok := body["state"]; ok {
@@ -211,7 +211,7 @@ func createWallet() error {
 	resp, err := client.R().
 		SetBody(body).
 		Post(config.AgentApiUrl+"/multitenancy/wallet")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
@@ -222,7 +222,7 @@ func createWallet() error {
 func receiveInvitation() error {
 	resp, err := client.R().
 		Get(config.IssuerContUrl+"/invitation-url")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	invitation, err := utils.ParseInvitationUrl(resp.String())
@@ -233,7 +233,7 @@ func receiveInvitation() error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/connections/receive-invitation")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -248,7 +248,7 @@ func sendCredentialProposal(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/issue-credential/send-proposal")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -258,7 +258,7 @@ func sendCredentialRequest(credExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/issue-credential/records/"+ credExId +"/send-request")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -276,7 +276,7 @@ func sendPresentationProposal(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/present-proof/send-proposal")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -286,7 +286,7 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Get(config.AgentApiUrl+"/present-proof/records/"+ presExId +"/credentials")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	credentials := resp.String()
@@ -328,7 +328,7 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/present-proof/records/"+ presExId +"/send-presentation")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -338,7 +338,7 @@ func deleteWallet() error {
 	// Delete wallet
 	resp, err := client.R().
 		Post(config.AgentApiUrl+"/multitenancy/wallet/"+ walletId +"/remove")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil

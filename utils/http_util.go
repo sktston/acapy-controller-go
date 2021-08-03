@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,15 +20,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func HttpError(ctx *gin.Context, status int, err error, holderId ...string) {
+func HttpError(ctx *gin.Context, status int, err error) {
 	bodyAsBytes, _ := ioutil.ReadAll(ctx.Request.Body)
 
-	log.Error().Err(err).Msgf("\n\tMethod:", ctx.Request.Method,
-		"\n\tRequestURI:", ctx.Request.RequestURI,
-		"\n\tContent-Type:", ctx.Request.Header.Values("Content-Type"),
-		"\n\tContentLength:", ctx.Request.ContentLength,
-		"\n\tBody:", string(bodyAsBytes),
-		"\n["+holderId[0]+"] http error:")
+	body := `{
+		"Method": "`+ctx.Request.Method+`",
+		"RequestURI": "`+ctx.Request.RequestURI+`",
+		"Content-Type": "`+ctx.Request.Header.Get("Content-Type")+`",
+		"ContentLength": "`+strconv.FormatInt(ctx.Request.ContentLength, 10)+`",
+		"Body": "`+string(bodyAsBytes)+`"
+	}`
+	log.Warn().Err(err).Msg(JsonString(body))
 
 	errStruct := gin.H{
 		"Code":    status,
@@ -44,10 +47,10 @@ func JsonString(jsonString string) string {
 	jsonString = strings.ReplaceAll(jsonString, "\n", "")
 
 	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
-	if err != nil { log.Error().Err(err) }
+	if err != nil { log.Error().Err(err).Msg("") }
 
 	jsonStringAsBytes, err := json.Marshal(unmarshalData)
-	if err != nil { log.Error().Err(err) }
+	if err != nil { log.Error().Err(err).Msg("") }
 
 	return string(jsonStringAsBytes)
 }
@@ -56,10 +59,10 @@ func PrettyJson(jsonString string) string {
 	var unmarshalData interface{}
 
 	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
-	if err != nil { log.Error().Err(err) }
+	if err != nil { log.Error().Err(err).Msg("") }
 
 	prettyJsonAsBytes, err := json.MarshalIndent(unmarshalData, "", "  ")
-	if err != nil { log.Error().Err(err) }
+	if err != nil { log.Error().Err(err).Msg("") }
 
 	return string(prettyJsonAsBytes)
 }
@@ -73,13 +76,13 @@ func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
 	token := strings.Split(invitationUrl, "?c_i=")
 	if len(token) != 2 {
 		err := errors.New("invalid invitation-url format")
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("")
 		return nil, err
 	}
 
 	invitation, err := base64.StdEncoding.DecodeString(token[1])
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("")
 		return nil, err
 	}
 	return invitation, nil

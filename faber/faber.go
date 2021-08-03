@@ -47,7 +47,7 @@ func main() {
 
 	// Read faber-config.json file
 	err := config.ReadConfig("./faber-config.json")
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	// Set log level debug
 	utils.SetLogLevelDebug(config.Debug)
@@ -58,12 +58,12 @@ func main() {
 
 	// Start web hook server
 	httpServer, err := startWebHookServer()
-	if err != nil { log.Fatal().Err(err) }
+	if err != nil { log.Fatal().Err(err).Msg("") }
 	defer func() { _ = shutdownWebHookServer(httpServer) }()
 
 	// Start Faber
-	err = provisionController()
-	if err != nil { log.Fatal().Err(err) }
+	//err = provisionController()
+	if err != nil { log.Fatal().Err(err).Msg("") }
 
 	log.Info().Msg("Waiting web hook event from agent...")
 	select {}
@@ -91,7 +91,7 @@ func startWebHookServer() (*http.Server, error) {
 	}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err)
+			log.Fatal().Err(err).Msg("")
 		}
 	}()
 	log.Info().Msg("Listen on http://" + utils.GetOutboundIP().String() + port)
@@ -102,7 +102,7 @@ func startWebHookServer() (*http.Server, error) {
 func shutdownWebHookServer(httpServer *http.Server) error {
 	// Shutdown http server gracefully
 	err := httpServer.Shutdown(context.Background())
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("Http server shutdown successfully")
 
 	return nil
@@ -111,21 +111,21 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 func provisionController() error {
 	log.Info().Msg("Obtain jwtToken of steward")
 	err := obtainStewardJwtToken()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 
 	log.Info().Msg("Create wallet")
 	err = createWallet()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 
 	log.Info().Msg("Create a new did and register the did as an issuer")
 	err = createPublicDid()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 
 	log.Info().Msg("Create schema and credential definition")
 	err = createSchema()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	err = createCredentialDefinition()
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 
 	log.Info().Msg("Configuration of faber:")
 	log.Info().Msg("- wallet name: " + walletName)
@@ -192,7 +192,7 @@ func createInvitationUrlQr(ctx *gin.Context) {
 func handleEvent(ctx *gin.Context) {
 	var body map[string]interface{}
 	err := ctx.ShouldBindJSON(&body)
-	if err != nil { log.Error().Err(err); utils.HttpError(ctx, http.StatusBadRequest, err); return }
+	if err != nil { utils.HttpError(ctx, http.StatusBadRequest, err); return }
 	topic := ctx.Param("topic")
 	var state string
 	if val, ok := body["state"]; ok {
@@ -251,7 +251,7 @@ func obtainStewardJwtToken() error {
 	resp, err := client.R().
 		SetQueryParam("wallet_name",stewardWallet).
 		Get(config.AgentApiUrl+"/multitenancy/wallets")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	wallets := gjson.Get(resp.String(), "results").Array()
@@ -266,7 +266,7 @@ func obtainStewardJwtToken() error {
 		resp, err = client.R().
 			SetBody(body).
 			Post(config.AgentApiUrl+"/multitenancy/wallet")
-		if err != nil { log.Error().Err(err); return err }
+		if err != nil { log.Error().Err(err).Msg(""); return err }
 		log.Info().Msg("response: "+resp.String())
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 
@@ -276,7 +276,7 @@ func obtainStewardJwtToken() error {
 			SetBody(body).
 			SetAuthToken(stewardJwtToken).
 			Post(config.AgentApiUrl+"/wallet/did/create")
-		if err != nil { log.Error().Err(err); return err }
+		if err != nil { log.Error().Err(err).Msg(""); return err }
 		log.Info().Msg("response: "+resp.String())
 		stewardDid := gjson.Get(resp.String(), "result.did").String()
 
@@ -285,7 +285,7 @@ func obtainStewardJwtToken() error {
 			SetQueryParam("did", stewardDid).
 			SetAuthToken(stewardJwtToken).
 			Post(config.AgentApiUrl+"/wallet/did/public")
-		if err != nil { log.Error().Err(err); return err }
+		if err != nil { log.Error().Err(err).Msg(""); return err }
 		log.Info().Msg("response: "+resp.String())
 	} else {
 		// stewardWallet exists -> get and return jwt token
@@ -293,7 +293,7 @@ func obtainStewardJwtToken() error {
 		log.Info().Msg("Found steward wallet - Get jwt token with wallet id: "+stewardWalletId)
 		resp, err = client.R().
 			Post(config.AgentApiUrl+"/multitenancy/wallet/"+stewardWalletId+"/token")
-		if err != nil { log.Error().Err(err); return err }
+		if err != nil { log.Error().Err(err).Msg(""); return err }
 		log.Info().Msg("response: "+resp.String())
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 	}
@@ -313,7 +313,7 @@ func createWallet() error {
 	resp, err := client.R().
 		SetBody(body).
 		Post(config.AgentApiUrl+"/multitenancy/wallet")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
@@ -326,7 +326,7 @@ func createPublicDid() error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/wallet/did/create")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 	did = gjson.Get(resp.String(), "result.did").String()
 	verKey = gjson.Get(resp.String(), "result.verkey").String()
@@ -340,7 +340,7 @@ func createPublicDid() error {
 		SetQueryParam("role", "ENDORSER").
 		SetAuthToken(stewardJwtToken).
 		Post(config.AgentApiUrl+"/ledger/register-nym")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	log.Info().Msg("Assign the did to public: "+did)
@@ -348,7 +348,7 @@ func createPublicDid() error {
 		SetQueryParam("did", did).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/wallet/did/public")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -365,7 +365,7 @@ func createSchema() error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/schemas")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 	schemaID = gjson.Get(resp.String(), "schema_id").String()
 
@@ -384,7 +384,7 @@ func createCredentialDefinition() error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/credential-definitions")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 	credDefId = gjson.Get(resp.String(), "credential_definition_id").String()
 
@@ -412,7 +412,7 @@ func sendCredentialOffer(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/issue-credential/records/"+credExId+"/send-offer")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -464,7 +464,7 @@ func sendProofRequest(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/present-proof/send-request")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
@@ -479,7 +479,7 @@ func revokeCredential(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(config.AgentApiUrl+"/revocation/revoke")
-	if err != nil { log.Error().Err(err); return err }
+	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 
 	return nil
