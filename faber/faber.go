@@ -43,17 +43,14 @@ var (
 
 func main() {
 	// Setting log
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read faber-config.json file
 	err := config.ReadConfig("./faber-config.json")
 	if err != nil { log.Fatal().Err(err) }
 
-	// Setting debug mode
-	if config.Debug {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	}
+	// Set log level debug
+	utils.SetLogLevelDebug(config.Debug)
 
 	// Set client configuration
 	client.SetTimeout(30 * time.Minute)

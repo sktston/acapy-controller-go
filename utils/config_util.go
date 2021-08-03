@@ -8,6 +8,8 @@ package utils
 
 import (
 	"encoding/json"
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"io/ioutil"
 	"net"
 	"os"
@@ -77,4 +79,14 @@ func GetOutboundIP() net.IP {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP
+}
+
+func SetLogLevelDebug(debugMode bool) {
+	if debugMode {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		gin.SetMode(gin.DebugMode)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		gin.SetMode(gin.ReleaseMode)
+	}
 }
