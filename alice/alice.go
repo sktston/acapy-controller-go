@@ -84,8 +84,6 @@ func startWebHookServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
 	router.Use(gin.Recovery())
-
-	// Use middleware to use zerolog
 	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 
 	router.POST("/webhooks/topic/:topic", handleEvent)
@@ -93,19 +91,16 @@ func startWebHookServer() (*http.Server, error) {
 	// Get port from HolderWebhookUrl
 	urlParse, _ := url.Parse(config.HolderWebhookUrl)
 	_, port, _ := net.SplitHostPort(urlParse.Host)
-	port = ":" + port
-
-	// Start http server
-	listener, err := net.Listen("tcp", port)
-	if err != nil { log.Fatal().Err(err) }
+	port = ":"+ port
 
 	httpServer := &http.Server{
+		Addr:    port,
 		Handler: router,
 	}
-
 	go func() {
-		err = httpServer.Serve(listener)
-		if err != nil && err != http.ErrServerClosed { log.Fatal().Err(err) }
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err)
+		}
 	}()
 	log.Info().Msg("Listen on http://" + utils.GetOutboundIP().String() + port)
 

@@ -28,7 +28,6 @@ type ControllerConfig struct {
 
 	// Faber only from json file
 	IssuerWebhookUrl   string `json:"IssuerWebhookUrl" validate:"omitempty,url"`
-	VerifierWebhookUrl string `json:"VerifierWebhookUrl" validate:"omitempty,url"`
 	RevokeAfterIssue   bool   `json:"RevokeAfterIssue"`
 	PublicInvitation   bool   `json:"PublicInvitation"`
 
