@@ -29,6 +29,7 @@ import (
 )
 
 var (
+	consoleWriter                                = zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}
 	client                                       = resty.New()
 	config                                       utils.ControllerConfig
 	jwtToken, walletId                           string
@@ -42,7 +43,7 @@ var (
 
 func main() {
 	// Setting log
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	log.Logger = log.Output(consoleWriter)
 
 	// Read alice-config.yaml file
 	err := config.ReadConfig("./alice-config.json")
@@ -84,7 +85,7 @@ func startWebHookServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
+	router.Use(logger.SetLogger(logger.WithWriter(consoleWriter)))
 
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
