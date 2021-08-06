@@ -233,7 +233,7 @@ func receiveInvitation() error {
 	resp, err = client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
-		Post(config.AgentApiUrl+"/connections/receive-invitation")
+		Post(config.AgentApiUrl+"/out-of-band/receive-invitation")
 	if err != nil { log.Error().Err(err).Msg(""); return err }
 	log.Info().Msg("response: "+resp.String())
 

@@ -146,10 +146,14 @@ func provisionController() error {
 }
 
 func requestCreateInvitation() (*resty.Response, error) {
+	body := `{
+			"handshake_protocols": [ "connections/1.0" ],
+			"use_public_did": `+ strconv.FormatBool(config.PublicInvitation) +`
+		}`
 	return client.R().
-		SetQueryParam("public", strconv.FormatBool(config.PublicInvitation)).
+		SetBody(body).
 		SetAuthToken(jwtToken).
-		Post(config.AgentApiUrl+"/connections/create-invitation")
+		Post(config.AgentApiUrl+"/out-of-band/create-invitation")
 }
 func createInvitation(ctx *gin.Context) {
 	resp, err := requestCreateInvitation()

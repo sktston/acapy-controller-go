@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"math/rand"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -73,14 +74,18 @@ func GetRandomInt(min int, max int) int {
 }
 
 func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
-	token := strings.Split(invitationUrl, "?c_i=")
-	if len(token) != 2 {
+
+	urlParse, _ := url.Parse(invitationUrl)
+	query, _ := url.ParseQuery(urlParse.RawQuery)
+
+	_, ok := query["oob"] // we use out-of-band invitation-url
+	if !ok {
 		err := errors.New("invalid invitation-url format")
 		log.Error().Err(err).Msg("")
 		return nil, err
 	}
-
-	invitation, err := base64.StdEncoding.DecodeString(token[1])
+	invitationEncoded := query["oob"][0]
+	invitation, err := base64.StdEncoding.DecodeString(invitationEncoded)
 	if err != nil {
 		log.Error().Err(err).Msg("")
 		return nil, err
