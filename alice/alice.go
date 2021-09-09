@@ -205,8 +205,7 @@ func createWallet() error {
 		"wallet_key": "`+walletName+".key"+`",
 		"wallet_type": "`+config.WalletType+`",
 		"label": "`+walletName+".label"+`",
-		"image_url": "`+imageUrl+`",
-		"wallet_webhook_urls": ["`+config.HolderWebhookUrl+`"]
+		"image_url": "`+imageUrl+`"
 	}`
 	log.Info().Msg("Create a new wallet" + utils.PrettyJson(body))
 	resp, err := client.R().
@@ -217,6 +216,15 @@ func createWallet() error {
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
+	body = `{
+		"wallet_webhook_urls": ["`+config.HolderWebhookUrl+`", "http://localhost:8080/webhooks/`+ walletId +`"]
+	}`
+	log.Info().Msg("Update wallet webhook urls" + utils.PrettyJson(body))
+	resp, err = client.R().
+		SetBody(body).
+		Put(config.AgentApiUrl+"/multitenancy/wallet/"+ walletId)
+	if err != nil { log.Error().Err(err).Msg(""); return err }
+	log.Info().Msg("response: "+resp.String())
 	return nil
 }
 
