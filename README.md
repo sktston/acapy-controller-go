@@ -31,7 +31,7 @@ $ docker-compose up --build
 - Faber controller opens 8040 port.
 - It receives webhook message from Faber agent by POST http://localhost:8040/webhooks/topic/{topic}/ 
 - Also, It presents invitation-url by GET http://localhost:8040/invitation-url
-- Detailed configuration is in [faber-config.json](./faber/faber-config.json)
+- Detailed configuration is in [faber-config.yml](./faber/faber-config.yml)
 ```
 $ cd faber
 $ go build
@@ -42,7 +42,7 @@ $ ./faber
 - Alice controller opens 8050 port. 
 - It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/ 
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
-- Detailed configuration is in [alice-config.json](./alice/alice-config.json)
+- Detailed configuration is in [alice-config.yml](./alice/alice-config.yml)
 ```
 $ cd alice
 $ go build
