@@ -7,18 +7,37 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
+	"gopkg.in/alecthomas/kingpin.v2"
 	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
-
-	"github.com/go-playground/validator/v10"
-	"github.com/rs/zerolog/log"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"strings"
 )
+
+func LoadConfig(config []byte) (err error) {
+	viper.SetConfigType("yaml")
+
+	replacer := strings.NewReplacer(".", "_")
+	viper.SetEnvKeyReplacer(replacer)
+
+	viper.AutomaticEnv()
+
+	err = viper.ReadConfig(bytes.NewBuffer(config))
+	if err != nil {
+		return err
+	}
+
+	return
+}
+
 
 type ControllerConfig struct {
 	// Common from json file
