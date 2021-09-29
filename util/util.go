@@ -7,15 +7,33 @@
 package util
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
+
+func LoadConfig(config []byte) (err error) {
+	viper.SetConfigType("yaml")
+
+	replacer := strings.NewReplacer(".", "_")
+	viper.SetEnvKeyReplacer(replacer)
+
+	viper.AutomaticEnv()
+
+	err = viper.ReadConfig(bytes.NewBuffer(config))
+	if err != nil {
+		return err
+	}
+
+	return
+}
 
 func PrettyJson(jsonString string) string {
 	var unmarshalData interface{}
