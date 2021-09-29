@@ -9,7 +9,7 @@ Repository structure details:
 /
 ├── alice/       # Alice (Holder) controller implementation
 ├── faber/       # Faber (Issuer&Verifier) controller implementation
-├── utils/       # Common utility functions 
+├── util/        # Common utility functions
 └── docker/      # docker-compose.yml to run ACA-Py agent
 ```
 
