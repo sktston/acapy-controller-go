@@ -1,4 +1,4 @@
-module github.com/sktston/acapy-controller-go/utils
+module github.com/sktston/acapy-controller-go/util
 
 go 1.16
 

@@ -16,7 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/skip2/go-qrcode"
-	"github.com/sktston/acapy-controller-go/utils"
+	"github.com/sktston/acapy-controller-go/util"
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -34,9 +34,9 @@ var (
 	did, verKey, schemaId, credDefId, walletId string
 	agentApiUrl, stewardJwtToken, jwtToken     string
 
-	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99))
+	version = strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(util.GetRandomInt(1, 99))
 	walletName  = "faber." + version
 	imageUrl    = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 	stewardSeed = "000000000000000000000000Steward1"
@@ -51,7 +51,7 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read config file
-	if err := utils.LoadConfig(config); err != nil {
+	if err := util.LoadConfig(config); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
@@ -329,7 +329,7 @@ func obtainStewardJwtToken() error {
 			"wallet_key": "` + stewardWallet + ".key" + `",
 			"wallet_type": "` + viper.GetString("wallet-type") + `"
 		}`
-		log.Info().Msgf("Not found steward wallet - Create a new steward wallet: " + utils.PrettyJson(body))
+		log.Info().Msgf("Not found steward wallet - Create a new steward wallet: " + util.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
 			Post(agentApiUrl + "/multitenancy/wallet")
@@ -341,7 +341,7 @@ func obtainStewardJwtToken() error {
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 
 		body = `{ "seed": "` + stewardSeed + `" }`
-		log.Info().Msgf("Create a steward did: " + utils.PrettyJson(body))
+		log.Info().Msgf("Create a steward did: " + util.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
 			SetAuthToken(stewardJwtToken).
@@ -388,7 +388,7 @@ func createWallet() error {
 		"image_url": "` + imageUrl + `",
 		"wallet_webhook_urls": ["` + viper.GetString("server-webhook-url") + `"]
 	}`
-	log.Info().Msgf("Create a new wallet" + utils.PrettyJson(body))
+	log.Info().Msgf("Create a new wallet" + util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
@@ -451,7 +451,7 @@ func createSchema() error {
 		"schema_version": "` + version + `",
 		"attributes": ["name", "date", "degree", "age", "photo"]
 	}`
-	log.Info().Msgf("Create a new schema on the ledger:" + utils.PrettyJson(body))
+	log.Info().Msgf("Create a new schema on the ledger:" + util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
@@ -473,7 +473,7 @@ func createCredentialDefinition() error {
 		"support_revocation": true,
 		"revocation_registry_size": 10
 	}`
-	log.Info().Msgf("Create a new credential definition on the ledger:" + utils.PrettyJson(body))
+	log.Info().Msgf("Create a new credential definition on the ledger:" + util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).

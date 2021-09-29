@@ -4,7 +4,7 @@
  * since July 28, 2020                            *
  **************************************************/
 
-package utils
+package util
 
 import (
 	"encoding/base64"

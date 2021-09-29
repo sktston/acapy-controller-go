@@ -15,7 +15,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/sktston/acapy-controller-go/utils"
+	"github.com/sktston/acapy-controller-go/util"
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -34,9 +34,9 @@ var (
 	client                          = resty.New()
 	agentApiUrl, jwtToken, walletId string
 
-	version = strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99)) + "." +
-		strconv.Itoa(utils.GetRandomInt(1, 99))
+	version = strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
+		strconv.Itoa(util.GetRandomInt(1, 99))
 	walletName = "alice." + version
 	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 
@@ -49,7 +49,7 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read config file
-	if err := utils.LoadConfig(config); err != nil {
+	if err := util.LoadConfig(config); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
@@ -248,7 +248,7 @@ func createWallet() error {
 		"image_url": "` + imageUrl + `",
 		"wallet_webhook_urls": ["` + viper.GetString("server-webhook-url") + `"]
 	}`
-	log.Info().Msgf("Create a new wallet" + utils.PrettyJson(body))
+	log.Info().Msgf("Create a new wallet" + util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
@@ -272,7 +272,7 @@ func receiveInvitation() error {
 	}
 	log.Info().Msgf("response: " + resp.String())
 
-	invitation, err := utils.ParseInvitationUrl(resp.String())
+	invitation, err := util.ParseInvitationUrl(resp.String())
 	log.Info().Msgf("invitation: " + string(invitation))
 
 	body := string(invitation)
@@ -293,7 +293,7 @@ func sendCredentialProposal(connectionId string) error {
 	body := `{
 		"connection_id": "` + connectionId + `"
 	}`
-	log.Info().Msgf(utils.PrettyJson(body))
+	log.Info().Msgf(util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
