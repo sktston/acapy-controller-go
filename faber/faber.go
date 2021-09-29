@@ -52,7 +52,7 @@ func main() {
 
 	// Read config file
 	if err := utils.LoadConfig(config); err != nil {
-		log.Fatal().Err(err).Caller().Msg("")
+		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
 
@@ -72,15 +72,17 @@ func main() {
 	// Start web hook server
 	httpServer, err := startWebHookServer()
 	if err != nil {
-		log.Fatal().Err(err).Caller().Msg("")
+		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	defer func() {
-		_ = shutdownWebHookServer(httpServer)
+		if err := shutdownWebHookServer(httpServer); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
 	}()
 
 	// Start Faber
 	if err := provisionController(); err != nil {
-		log.Fatal().Err(err).Caller().Msg("")
+		log.Fatal().Err(err).Caller().Msgf("")
 	}
 
 	log.Info().Msgf("Waiting web hook event from agent...")
@@ -99,7 +101,7 @@ func startWebHookServer() (*http.Server, error) {
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
 	// Get port from HolderWebhookUrl
-	urlParse, _ := url.Parse(viper.GetString("issuer-webhook-url"))
+	urlParse, _ := url.Parse(viper.GetString("server-webhook-url"))
 	_, port, _ := net.SplitHostPort(urlParse.Host)
 	port = ":" + port
 
@@ -109,10 +111,10 @@ func startWebHookServer() (*http.Server, error) {
 	}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Caller().Msg("")
+			log.Fatal().Err(err).Caller().Msgf("")
 		}
 	}()
-	log.Info().Msgf("Listen on http://" + utils.GetOutboundIP().String() + port)
+	log.Info().Msgf("Listen on http://" + urlParse.Host)
 
 	return httpServer, nil
 }
@@ -120,7 +122,7 @@ func startWebHookServer() (*http.Server, error) {
 func shutdownWebHookServer(httpServer *http.Server) error {
 	// Shutdown http server gracefully
 	if err := httpServer.Shutdown(context.Background()); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("Http server shutdown successfully")
@@ -132,35 +134,35 @@ func provisionController() error {
 	log.Info().Msgf("Obtain jwtToken of steward")
 
 	if err := obtainStewardJwtToken(); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 
 	log.Info().Msgf("Create wallet")
 	if err := createWallet(); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 
 	log.Info().Msgf("Create a new did and register the did as an issuer")
 	if err := createPublicDid(); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 
 	log.Info().Msgf("Create schema and credential definition")
 	if err := createSchema(); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	if err := createCredentialDefinition(); err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 
 	log.Info().Msgf("Configuration of faber:")
 	log.Info().Msgf("- wallet name: " + walletName)
-	log.Info().Msgf("- webhook url: " + viper.GetString("issuer-webhook-url"))
+	log.Info().Msgf("- webhook url: " + viper.GetString("server-webhook-url"))
 	log.Info().Msgf("- wallet ID: " + walletId)
 	log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
 	log.Info().Msgf("- jwt token: " + jwtToken)
@@ -189,7 +191,7 @@ func requestCreateInvitation() (*resty.Response, error) {
 func createInvitation(c *gin.Context) {
 	resp, err := requestCreateInvitation()
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -203,7 +205,7 @@ func createInvitation(c *gin.Context) {
 func createInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation()
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -217,7 +219,7 @@ func createInvitationUrl(c *gin.Context) {
 func createInvitationUrlQr(c *gin.Context) {
 	resp, err := requestCreateInvitation()
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -256,7 +258,7 @@ func handleEvent(c *gin.Context) {
 			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer()")
 
 			if err := sendCredentialOffer(body["credential_exchange_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msg("")
+				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -267,7 +269,7 @@ func handleEvent(c *gin.Context) {
 				log.Info().Msgf("- revoke-after-issue is true -> revokeCredential()")
 
 				if err := revokeCredential(body["credential_exchange_id"].(string)); err != nil {
-					log.Error().Err(err).Caller().Msg("")
+					log.Error().Err(err).Caller().Msgf("")
 					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}
@@ -279,7 +281,7 @@ func handleEvent(c *gin.Context) {
 			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest()")
 
 			if err := sendProofRequest(body["connection_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msg("")
+				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -287,7 +289,7 @@ func handleEvent(c *gin.Context) {
 			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> printProofResult()")
 
 			if err := printProofResult(body); err != nil {
-				log.Error().Err(err).Caller().Msg("")
+				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -300,7 +302,7 @@ func handleEvent(c *gin.Context) {
 	case "issuer_cred_rev":
 
 	default:
-		log.Warn().Msg("- Warning Unexpected topic:" + topic)
+		log.Warn().Msgf("- Warning Unexpected topic:" + topic)
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:"+ topic})
 		return
 	}
@@ -314,7 +316,7 @@ func obtainStewardJwtToken() error {
 		SetQueryParam("wallet_name", stewardWallet).
 		Get(agentApiUrl + "/multitenancy/wallets")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -332,7 +334,7 @@ func obtainStewardJwtToken() error {
 			SetBody(body).
 			Post(agentApiUrl + "/multitenancy/wallet")
 		if err != nil {
-			log.Error().Err(err).Caller().Msg("")
+			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
 		log.Info().Msgf("response: " + resp.String())
@@ -345,7 +347,7 @@ func obtainStewardJwtToken() error {
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/create")
 		if err != nil {
-			log.Error().Err(err).Caller().Msg("")
+			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
 		log.Info().Msgf("response: " + resp.String())
@@ -357,7 +359,7 @@ func obtainStewardJwtToken() error {
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/public")
 		if err != nil {
-			log.Error().Err(err).Caller().Msg("")
+			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
 		log.Info().Msgf("response: " + resp.String())
@@ -368,7 +370,7 @@ func obtainStewardJwtToken() error {
 		resp, err = client.R().
 			Post(agentApiUrl + "/multitenancy/wallet/" + stewardWalletId + "/token")
 		if err != nil {
-			log.Error().Err(err).Caller().Msg("")
+			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
 		log.Info().Msgf("response: " + resp.String())
@@ -384,14 +386,14 @@ func createWallet() error {
 		"wallet_type": "` + viper.GetString("wallet-type") + `",
 		"label": "` + walletName + ".label" + `",
 		"image_url": "` + imageUrl + `",
-		"wallet_webhook_urls": ["` + viper.GetString("issuer-webhook-url") + `"]
+		"wallet_webhook_urls": ["` + viper.GetString("server-webhook-url") + `"]
 	}`
 	log.Info().Msgf("Create a new wallet" + utils.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -407,7 +409,7 @@ func createPublicDid() error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/create")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -424,7 +426,7 @@ func createPublicDid() error {
 		SetAuthToken(stewardJwtToken).
 		Post(agentApiUrl + "/ledger/register-nym")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -435,7 +437,7 @@ func createPublicDid() error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/public")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -455,7 +457,7 @@ func createSchema() error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/schemas")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -477,7 +479,7 @@ func createCredentialDefinition() error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/credential-definitions")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -508,7 +510,7 @@ func sendCredentialOffer(credExId string) error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-offer")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -563,7 +565,7 @@ func sendProofRequest(connectionId string) error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-request")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -581,7 +583,7 @@ func revokeCredential(credExId string) error {
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/revocation/revoke")
 	if err != nil {
-		log.Error().Err(err).Caller().Msg("")
+		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
 	log.Info().Msgf("response: " + resp.String())
@@ -591,7 +593,7 @@ func revokeCredential(credExId string) error {
 
 func printProofResult(body map[string]interface{}) error {
 	if body["verified"] != "true" {
-		log.Warn().Msg("proof is not verified")
+		log.Warn().Msgf("proof is not verified")
 		return nil
 	}
 

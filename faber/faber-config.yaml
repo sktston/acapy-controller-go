@@ -1,4 +1,4 @@
-issuer-webhook-url: http://localhost:8040/webhooks
+server-webhook-url: http://localhost:8040/webhooks
 agent-api-url: http://localhost:8021
 wallet-type: indy
 public-invitation: true

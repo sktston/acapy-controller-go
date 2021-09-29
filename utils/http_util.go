@@ -10,51 +10,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
-
-func HttpError(ctx *gin.Context, status int, err error) {
-	bodyAsBytes, _ := ioutil.ReadAll(ctx.Request.Body)
-
-	jsonLog := `{
-		"Method": "`+ctx.Request.Method+`",
-		"RequestURI": "`+ctx.Request.RequestURI+`",
-		"Content-Type": "`+ctx.Request.Header.Get("Content-Type")+`",
-		"ContentLength": "`+strconv.FormatInt(ctx.Request.ContentLength, 10)+`",
-		"Body": "`+string(bodyAsBytes)+`"
-	}`
-	log.Warn().Err(err).Msg(JsonString(jsonLog))
-
-	errStruct := gin.H{
-		"Code":    status,
-		"Message": err.Error(),
-	}
-
-	ctx.JSON(status, errStruct)
-	return
-}
-
-func JsonString(jsonString string) string {
-	var unmarshalData interface{}
-
-	jsonString = strings.ReplaceAll(jsonString, "\n", "")
-
-	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
-	if err != nil { log.Error().Err(err).Msg("") }
-
-	jsonStringAsBytes, err := json.Marshal(unmarshalData)
-	if err != nil { log.Error().Err(err).Msg("") }
-
-	return string(jsonStringAsBytes)
-}
 
 func PrettyJson(jsonString string) string {
 	var unmarshalData interface{}
