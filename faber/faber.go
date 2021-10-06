@@ -56,11 +56,12 @@ func main() {
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
 
-	// Set log level debug
-	if strings.ToUpper(viper.GetString("log-mode")) == "DEBUG" {
+	// Set log level for zerolog and gin
+	switch strings.ToUpper(viper.GetString("log-level")) {
+	case "DEBUG" :
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		gin.SetMode(gin.DebugMode)
-	} else {
+	default:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 		gin.SetMode(gin.ReleaseMode)
 	}
