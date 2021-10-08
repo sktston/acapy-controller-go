@@ -91,6 +91,7 @@ func main() {
 
 	// Wait exit signal
 	<-exitSignal
+	time.Sleep(2*time.Second)
 	if err := shutdownWebHookServer(httpServer); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
@@ -138,18 +139,22 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 }
 
 func provisionController() error {
-	log.Info().Msgf("Create wallet")
-	if err := createWallet(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
+	if viper.GetBool("use-multitenancy") == true {
+		log.Info().Msgf("Create wallet")
+		if err := createWallet(); err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 	}
 
 	log.Info().Msgf("Configuration of alice:")
-	log.Info().Msgf("- wallet name: " + walletName)
+	if viper.GetBool("use-multitenancy") == true {
+		log.Info().Msgf("- wallet name: " + walletName)
+		log.Info().Msgf("- wallet ID: " + walletId)
+		log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
+		log.Info().Msgf("- jwt token: " + jwtToken)
+	}
 	log.Info().Msgf("- webhook url: " + viper.GetString("server-webhook-url"))
-	log.Info().Msgf("- wallet ID: " + walletId)
-	log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
-	log.Info().Msgf("- jwt token: " + jwtToken)
 
 	return nil
 }
@@ -215,12 +220,16 @@ func handleEvent(c *gin.Context) {
 				return
 			}
 		} else if state == "presentation_acked" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> deleteWallet() & Exit")
+			if viper.GetBool("use-multitenancy") == true {
+				log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> deleteWallet() & Exit")
 
-			if err := deleteWallet(); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+				if err := deleteWallet(); err != nil {
+					log.Error().Err(err).Caller().Msgf("")
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			} else {
+				log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> Exit")
 			}
 
 			// Send exit signal
@@ -287,6 +296,17 @@ func receiveInvitation() error {
 	}
 	log.Info().Msgf("response: " + resp.String())
 
+	state := gjson.Get(resp.String(), "state").String()
+	// connection already exist -> reuse it
+	if state == "active" {
+		connectionId := gjson.Get(resp.String(), "connection_id").String()
+		log.Info().Msgf("connection:" + connectionId + " already exist -> sendCredentialProposal()")
+
+		if err := sendCredentialProposal(connectionId); err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+		}
+	}
+
 	return nil
 }
 
@@ -294,7 +314,6 @@ func sendCredentialProposal(connectionId string) error {
 	body := `{
 		"connection_id": "` + connectionId + `"
 	}`
-	log.Info().Msgf(util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).

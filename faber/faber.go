@@ -132,23 +132,24 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 }
 
 func provisionController() error {
-	log.Info().Msgf("Obtain jwtToken of steward")
+	if viper.GetBool("use-multitenancy") == true {
+		log.Info().Msgf("Obtain jwtToken of steward")
+		if err := obtainStewardJwtToken(); err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 
-	if err := obtainStewardJwtToken(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
-	}
+		log.Info().Msgf("Create wallet")
+		if err := createWallet(); err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 
-	log.Info().Msgf("Create wallet")
-	if err := createWallet(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
-	}
-
-	log.Info().Msgf("Create a new did and register the did as an issuer")
-	if err := createPublicDid(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
+		log.Info().Msgf("Create a new did and register the did as an issuer")
+		if err := createPublicDid(); err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 	}
 
 	log.Info().Msgf("Create schema and credential definition")
@@ -162,13 +163,15 @@ func provisionController() error {
 	}
 
 	log.Info().Msgf("Configuration of faber:")
-	log.Info().Msgf("- wallet name: " + walletName)
+	if viper.GetBool("use-multitenancy") == true {
+		log.Info().Msgf("- wallet name: " + walletName)
+		log.Info().Msgf("- wallet ID: " + walletId)
+		log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
+		log.Info().Msgf("- jwt token: " + jwtToken)
+		log.Info().Msgf("- did: " + did)
+		log.Info().Msgf("- verification key: " + verKey)
+	}
 	log.Info().Msgf("- webhook url: " + viper.GetString("server-webhook-url"))
-	log.Info().Msgf("- wallet ID: " + walletId)
-	log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
-	log.Info().Msgf("- jwt token: " + jwtToken)
-	log.Info().Msgf("- did: " + did)
-	log.Info().Msgf("- verification key: " + verKey)
 	log.Info().Msgf("- schema ID: " + schemaId)
 	log.Info().Msgf("- credential definition ID: " + credDefId)
 
