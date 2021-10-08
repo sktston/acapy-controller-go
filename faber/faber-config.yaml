@@ -4,3 +4,4 @@ wallet-type: indy
 public-invitation: true
 revoke-after-issue: false
 log-level: INFO
+use-multitenancy: true
