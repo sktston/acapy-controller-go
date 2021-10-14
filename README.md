@@ -50,7 +50,7 @@ $ ./alice
 ```
 
 ## Work flow
-### Provision (Issuer or Holder)
+### Provision (Issuer/Verifier or Holder)
 | Public API | Issuer API | Steward API |
 |---|---|---|
 | POST /multitenancy/wallet |  |  |
@@ -85,7 +85,7 @@ $ ./alice
 |  | **auto** POST /issue-credential/records/{credExId}/store | issue_credential, credential_acked | issue_credential, credential_acked |
 
 ### Presentation
-| Issuer API | Holder API | Issuer webhook (topic, state) | Holder webhook (topic, state) |
+| Verifier API | Holder API | Verifier webhook (topic, state) | Holder webhook (topic, state) |
 |---|---|---|---|
 |  | POST /present-proof/send-proposal | present_proof, proposal_received | present_proof, proposal_sent |
 | POST /present-proof/send-request |  | present_proof, request_sent | present_proof, request_received |
