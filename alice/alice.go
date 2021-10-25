@@ -296,17 +296,6 @@ func receiveInvitation() error {
 	}
 	log.Info().Msgf("response: " + resp.String())
 
-	state := gjson.Get(resp.String(), "state").String()
-	// connection already exist -> reuse it
-	if state == "active" {
-		connectionId := gjson.Get(resp.String(), "connection_id").String()
-		log.Info().Msgf("connection:" + connectionId + " already exist -> sendCredentialProposal()")
-
-		if err := sendCredentialProposal(connectionId); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
-		}
-	}
-
 	return nil
 }
 
