@@ -367,7 +367,7 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 	var maxRevId uint64 = 0
 	var credId string
 	for idx, credRevID := range credRevIDs {
-		if credRevID.Uint() > maxRevId {
+		if credRevID.Uint() >= maxRevId {
 			maxRevId = credRevID.Uint()
 			credId = credIDs[idx].String()
 		}
@@ -377,14 +377,14 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 	// Make body using presentationRequest
 	presRequestBytes, _ := json.Marshal(presentationRequest)
 
-	var newReqAttrs string
+	newReqAttrs := "{}"
 	reqAttrs := gjson.Get(string(presRequestBytes), "requested_attributes").Map()
 	for key := range reqAttrs {
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".cred_id", credId)
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".revealed", true)
 	}
 
-	var newReqPreds string
+	newReqPreds := "{}"
 	reqPreds := gjson.Get(string(presRequestBytes), "requested_predicates").Map()
 	for key := range reqPreds {
 		newReqPreds, _ = sjson.Set(newReqPreds, key+".cred_id", credId)
