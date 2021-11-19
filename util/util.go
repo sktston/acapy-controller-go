@@ -53,18 +53,23 @@ func GetRandomInt(min int, max int) int {
 }
 
 func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
-
 	urlParse, _ := url.Parse(invitationUrl)
 	query, _ := url.ParseQuery(urlParse.RawQuery)
 
-	_, ok := query["oob"] // we use out-of-band invitation-url
-	if !ok {
+	invitationEncoded := ""
+	_, ok := query["oob"]; if ok { // out-of-band invitation-url case
+		invitationEncoded = query["oob"][0]
+	}
+	_, ok = query["c_i"]; if ok { // connection invitation-url case
+		invitationEncoded = query["c_i"][0]
+	}
+	if invitationEncoded == "" {
 		err := errors.New("invalid invitation-url format")
 		log.Error().Err(err).Msg("")
 		return nil, err
 	}
-	invitationEncoded := query["oob"][0]
-	invitation, err := base64.StdEncoding.DecodeString(invitationEncoded)
+
+	invitation, err := base64.URLEncoding.DecodeString(invitationEncoded)
 	if err != nil {
 		log.Error().Err(err).Msg("")
 		return nil, err
