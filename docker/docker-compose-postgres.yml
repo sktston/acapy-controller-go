@@ -25,12 +25,13 @@ services:
                  "--label", "base.agent",
                  "--public-invites",
                  "--wallet-local-did",
-                 "--wallet-type", "indy",
+                 "--wallet-type", "askar",
                  "--wallet-name", "base",
                  "--wallet-key", "base.key",
                  "--wallet-storage-type", "postgres_storage",
                  "--wallet-storage-config", "{\"url\":\"postgres:5432\",\"wallet_scheme\":\"MultiWalletSingleTableSharedPool\"}",
                  "--wallet-storage-creds", "{\"account\":\"postgres\",\"password\":\"mysecretpassword\",\"admin_account\":\"postgres\",\"admin_password\":\"mysecretpassword\"}",
+                 "--multitenancy-config", "{\"wallet_type\":\"askar-profile\",\"wallet_name\":\"askar-profile-name\"}",
                  "--auto-accept-invites",
                  "--auto-accept-requests",
                  "--auto-ping-connection",
@@ -51,7 +52,7 @@ services:
                  "--public-invites"]
 
   postgres:
-    image: postgres
+    image: postgres:11.13
     environment:
       - POSTGRES_PASSWORD=mysecretpassword
     ports:
