@@ -1,4 +1,3 @@
-server-webhook-url: http://localhost:8050/webhooks
 issuer-invitation-url: http://localhost:8040/invitation-url
 agent-api-url: http://localhost:8021
 wallet-type: askar

@@ -7,10 +7,9 @@
 package main
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
-	"github.com/gin-contrib/logger"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog"
@@ -19,11 +18,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,11 +36,79 @@ var (
 	walletName = "alice." + version
 	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 
+	pollingCyclePeriod = time.Second
+	pollingRetryMax = 100
+
 	//go:embed alice-config.yaml
 	config []byte
 )
 
 func main() {
+	// Initialization
+	initialization()
+
+	// (multitenancy) Create wallet
+	if viper.GetBool("use-multitenancy") == true {
+		if err := provisionController(); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+	}
+
+	// Establish Connection
+	log.Info().Msgf("Receive invitation to establish connection")
+	connectionId, err := receiveInvitation()
+	if err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	log.Info().Msgf("connection id: " + connectionId)
+	if err = waitUntilConnectionActive(connectionId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	log.Info().Msgf("connection established")
+
+	// Receive Credential
+	log.Info().Msgf("Send credential proposal to receive credential offer")
+	if err = sendCredentialProposal(connectionId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	credExId, err := waitUntilCredentialExchangeOfferReceived(connectionId)
+	log.Info().Msgf("credential exchange id: " + credExId)
+
+	log.Info().Msgf("Send credential request to receive credential")
+	if err = sendCredentialRequest(credExId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	if err = waitUntilCredentialExchangeAcked(credExId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	log.Info().Msgf("credential received")
+
+	// Send presentation
+	log.Info().Msgf("Send presentation proposal to receive presentation request")
+	if err = sendPresentationProposal(connectionId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	presExId, err := waitUntilPresentationExchangeRequestReceived(connectionId)
+	log.Info().Msgf("presentation exchange id: " + credExId)
+
+	log.Info().Msgf("Send presentation")
+	if err = sendPresentation(presExId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	if err = waitUntilPresentationExchangeAcked(presExId); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	log.Info().Msgf("presentation acked")
+
+	// (multitenancy) Delete wallet
+	if viper.GetBool("use-multitenancy") == true {
+		if err = deleteWallet(); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+	}
+}
+
+func initialization() {
 	// Setting logger
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
@@ -67,94 +131,20 @@ func main() {
 	// Set client configuration
 	client.SetTimeout(30 * time.Minute)
 	client.SetHeader("Content-Type", "application/json")
-
-	// Start web hook server
-	httpServer, err := startWebHookServer()
-	if err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-
-	// Set exit signal
-	exitSignal := make(chan os.Signal)
-	signal.Notify(exitSignal, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	// Start Alice
-	if err := provisionController(); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-
-	// Receive invitation
-	log.Info().Msgf("Receive invitation from faber controller")
-	if err := receiveInvitation(); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-
-	// Wait exit signal
-	<-exitSignal
-	time.Sleep(2*time.Second)
-	if err := shutdownWebHookServer(httpServer); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-	close(exitSignal)
-
-	return
-}
-
-func startWebHookServer() (*http.Server, error) {
-	// Set up http router
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
-
-	router.POST("/webhooks/topic/:topic", handleEvent)
-
-	// Get port from HolderWebhookUrl
-	urlParse, _ := url.Parse(viper.GetString("server-webhook-url"))
-	_, port, _ := net.SplitHostPort(urlParse.Host)
-	port = ":" + port
-
-	httpServer := &http.Server{
-		Addr:    port,
-		Handler: router,
-	}
-	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Caller().Msgf("")
-		}
-	}()
-	log.Info().Msgf("Listen on http://" + urlParse.Host)
-
-	return httpServer, nil
-}
-
-func shutdownWebHookServer(httpServer *http.Server) error {
-	// Shutdown http server gracefully
-	if err := httpServer.Shutdown(context.Background()); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
-	}
-	log.Info().Msgf("Http server shutdown successfully")
-
-	return nil
 }
 
 func provisionController() error {
-	if viper.GetBool("use-multitenancy") == true {
-		log.Info().Msgf("Create wallet")
-		if err := createWallet(); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
-			return err
-		}
+	log.Info().Msgf("Create wallet")
+	if err := createWallet(); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+		return err
 	}
 
 	log.Info().Msgf("Configuration of alice:")
-	if viper.GetBool("use-multitenancy") == true {
-		log.Info().Msgf("- wallet name: " + walletName)
-		log.Info().Msgf("- wallet ID: " + walletId)
-		log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
-		log.Info().Msgf("- jwt token: " + jwtToken)
-	}
-	log.Info().Msgf("- webhook url: " + viper.GetString("server-webhook-url"))
+	log.Info().Msgf("- wallet name: " + walletName)
+	log.Info().Msgf("- wallet ID: " + walletId)
+	log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
+	log.Info().Msgf("- jwt token: " + jwtToken)
 
 	return nil
 }
@@ -212,13 +202,8 @@ func handleEvent(c *gin.Context) {
 	case "present_proof":
 		// When proof request is received, send proof(presentation)
 		if state == "request_received" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendProof()")
+			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendPresentation()")
 
-			if err := sendProof(body["presentation_exchange_id"].(string), body["presentation_request"].(map[string]interface{})); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
 		} else if state == "presentation_acked" {
 			if viper.GetBool("use-multitenancy") == true {
 				log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> deleteWallet() & Exit")
@@ -255,10 +240,9 @@ func createWallet() error {
 		"wallet_key": "` + walletName + ".key" + `",
 		"wallet_type": "` + viper.GetString("wallet-type") + `",
 		"label": "` + walletName + ".label" + `",
-		"image_url": "` + imageUrl + `",
-		"wallet_webhook_urls": ["` + viper.GetString("server-webhook-url") + `"]
+		"image_url": "` + imageUrl + `"
 	}`
-	log.Info().Msgf("Create a new wallet" + util.PrettyJson(body))
+	log.Info().Msgf("Create a new wallet: " + util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
@@ -266,21 +250,21 @@ func createWallet() error {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
 	return nil
 }
 
-func receiveInvitation() error {
+func receiveInvitation() (string, error) {
 	resp, err := client.R().
 		Get(viper.GetString("issuer-invitation-url"))
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
-		return err
+		return "", err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	invitation, err := util.ParseInvitationUrl(resp.String())
 	log.Info().Msgf("invitation: " + string(invitation))
@@ -292,11 +276,35 @@ func receiveInvitation() error {
 		Post(agentApiUrl + "/out-of-band/receive-invitation")
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
-		return err
+		return "", err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
+	connectionId := gjson.Get(resp.String(), `connection_id`).String()
 
-	return nil
+	return connectionId, nil
+}
+
+func waitUntilConnectionActive(connectionId string) error {
+	log.Info().Msgf("Wait until connection (state: active)")
+	for retry := 0; retry < pollingRetryMax; retry++ {
+		time.Sleep(pollingCyclePeriod)
+		resp, err := client.R().
+			SetAuthToken(jwtToken).
+			Get(agentApiUrl + "/connections/" + connectionId)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+		state := gjson.Get(resp.String(), `state`).String()
+		log.Info().Msgf("connection state: " + state)
+		if state == "active" {
+			return nil
+		}
+	}
+	err := errors.New("timeout - connection is not (state: active)")
+	log.Error().Err(err).Caller().Msgf("")
+	return err
 }
 
 func sendCredentialProposal(connectionId string) error {
@@ -311,9 +319,34 @@ func sendCredentialProposal(connectionId string) error {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
+}
+
+func waitUntilCredentialExchangeOfferReceived(connectionId string) (string, error) {
+	log.Info().Msgf("Wait until credential exchange (state: offer_received)")
+	for retry := 0; retry < pollingRetryMax; retry++ {
+		time.Sleep(pollingCyclePeriod)
+		params := "?state=offer_received&connection_id=" + connectionId
+		resp, err := client.R().
+			SetAuthToken(jwtToken).
+			Get(agentApiUrl + "/issue-credential/records" + params)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return "", err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+
+		credExes := gjson.Get(resp.String(), "results").Array()
+		log.Info().Msgf("the number of credential exchange (state: offer_received): " + strconv.Itoa(len(credExes)) )
+		if len(credExes) > 0 {
+			return gjson.Get(credExes[0].String(), "credential_exchange_id").String(), nil
+		}
+	}
+	err := errors.New("timeout - credential exchange is not (state: offer_received)")
+	log.Error().Err(err).Caller().Msgf("")
+	return "", err
 }
 
 func sendCredentialRequest(credExId string) error {
@@ -324,9 +357,32 @@ func sendCredentialRequest(credExId string) error {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
+}
+
+func waitUntilCredentialExchangeAcked(credExId string) error {
+	log.Info().Msgf("Wait until credential exchange (state: credential_acked)")
+	for retry := 0; retry < pollingRetryMax; retry++ {
+		time.Sleep(pollingCyclePeriod)
+		resp, err := client.R().
+			SetAuthToken(jwtToken).
+			Get(agentApiUrl + "/issue-credential/records/" + credExId)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+		state := gjson.Get(resp.String(), `state`).String()
+		log.Info().Msgf("ccredential exchange state: " + state)
+		if state == "credential_acked" {
+			return nil
+		}
+	}
+	err := errors.New("timeout - credential exchange is not (state: credential_acked)")
+	log.Error().Err(err).Caller().Msgf("")
+	return err
 }
 
 func sendPresentationProposal(connectionId string) error {
@@ -345,20 +401,51 @@ func sendPresentationProposal(connectionId string) error {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
 }
 
-func sendProof(presExId string, presentationRequest map[string]interface{}) error {
+func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, error) {
+	log.Info().Msgf("Wait until presentation exchange (state: request_received)")
+	for retry := 0; retry < pollingRetryMax; retry++ {
+		time.Sleep(pollingCyclePeriod)
+		params := "?state=request_received&connection_id=" + connectionId
+		resp, err := client.R().
+			SetAuthToken(jwtToken).
+			Get(agentApiUrl + "/present-proof/records" + params)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return "", err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+
+		presExes := gjson.Get(resp.String(), "results").Array()
+		log.Info().Msgf("the number of presentation exchange (state: request_received): " + strconv.Itoa(len(presExes)) )
+		if len(presExes) > 0 {
+			return gjson.Get(presExes[0].String(), "presentation_exchange_id").String(), nil
+		}
+	}
+	err := errors.New("timeout - presentation exchange is not (state: request_received)")
+	log.Error().Err(err).Caller().Msgf("")
+	return "", err
+}
+
+func sendPresentation(presExId string) error {
 	resp, err := client.R().
+		SetAuthToken(jwtToken).
+		Get(agentApiUrl + "/present-proof/records/" + presExId)
+	log.Debug().Msgf("response: " + resp.String())
+	presReq := gjson.Get(resp.String(), "presentation_request").String()
+
+	resp, err = client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId + "/credentials")
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	credentials := resp.String()
 	credRevIDs := gjson.Get(credentials, "#.cred_info.cred_rev_id").Array()
@@ -372,20 +459,17 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 			credId = credIDs[idx].String()
 		}
 	}
-	log.Info().Msgf("Use latest credential in demo - credId: " + credId)
-
-	// Make body using presentationRequest
-	presRequestBytes, _ := json.Marshal(presentationRequest)
+	log.Info().Msgf("Use latest credential in demo - credential id: " + credId)
 
 	newReqAttrs := "{}"
-	reqAttrs := gjson.Get(string(presRequestBytes), "requested_attributes").Map()
+	reqAttrs := gjson.Get(presReq, "requested_attributes").Map()
 	for key := range reqAttrs {
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".cred_id", credId)
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".revealed", true)
 	}
 
 	newReqPreds := "{}"
-	reqPreds := gjson.Get(string(presRequestBytes), "requested_predicates").Map()
+	reqPreds := gjson.Get(presReq, "requested_predicates").Map()
 	for key := range reqPreds {
 		newReqPreds, _ = sjson.Set(newReqPreds, key+".cred_id", credId)
 	}
@@ -403,9 +487,32 @@ func sendProof(presExId string, presentationRequest map[string]interface{}) erro
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
+}
+
+func waitUntilPresentationExchangeAcked(presExId string) error {
+	log.Info().Msgf("Wait until presentation exchange (state: presentation_acked)")
+	for retry := 0; retry < pollingRetryMax; retry++ {
+		time.Sleep(pollingCyclePeriod)
+		resp, err := client.R().
+			SetAuthToken(jwtToken).
+			Get(agentApiUrl + "/present-proof/records/" + presExId)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+		state := gjson.Get(resp.String(), `state`).String()
+		log.Info().Msgf("presentation exchange state: " + state)
+		if state == "presentation_acked" {
+			return nil
+		}
+	}
+	err := errors.New("timeout - presentation exchange is not (state: presentation_acked)")
+	log.Error().Err(err).Caller().Msgf("")
+	return err
 }
 
 func deleteWallet() error {
@@ -416,7 +523,7 @@ func deleteWallet() error {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
-	log.Info().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
 }
