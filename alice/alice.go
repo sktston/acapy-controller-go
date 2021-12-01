@@ -8,7 +8,6 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -18,11 +17,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -147,91 +144,6 @@ func provisionController() error {
 	log.Info().Msgf("- jwt token: " + jwtToken)
 
 	return nil
-}
-
-func handleEvent(c *gin.Context) {
-	topic := c.Param("topic")
-
-	var body map[string]interface{}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		log.Error().Err(err).Caller().Msgf("invalid JSON")
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: "+ err.Error()})
-		return
-	}
-
-	var state string
-	if val, ok := body["state"]; ok {
-		state = val.(string)
-	}
-
-	bodyAsBytes, _ := json.Marshal(body)
-	log.Info().Msgf("handleEvent >>> topic:" + topic + ", state:" + state + ", body:" + string(bodyAsBytes))
-
-	switch topic {
-	case "connections":
-		if state == "active" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialProposal()")
-
-			if err := sendCredentialProposal(body["connection_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		}
-
-	case "issue_credential":
-		// When credential offer is received, send credential request
-		if state == "offer_received" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialRequest()")
-
-			if err := sendCredentialRequest(body["credential_exchange_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else if state == "credential_acked" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendPresentationProposal()")
-
-			if err := sendPresentationProposal(body["connection_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		}
-
-	case "present_proof":
-		// When proof request is received, send proof(presentation)
-		if state == "request_received" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendPresentation()")
-
-		} else if state == "presentation_acked" {
-			if viper.GetBool("use-multitenancy") == true {
-				log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> deleteWallet() & Exit")
-
-				if err := deleteWallet(); err != nil {
-					log.Error().Err(err).Caller().Msgf("")
-					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-			} else {
-				log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> Exit")
-			}
-
-			// Send exit signal
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-
-	case "basicmessages":
-	case "revocation_registry":
-	case "problem_report":
-	case "issuer_cred_rev":
-
-	default:
-		log.Warn().Msgf("- Warning Unexpected topic:" + topic)
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:"+ topic})
-		return
-	}
-	c.Status(http.StatusOK)
 }
 
 func createWallet() error {
