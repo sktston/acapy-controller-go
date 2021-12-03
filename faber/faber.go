@@ -10,6 +10,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"github.com/gin-contrib/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -187,12 +188,9 @@ func provisionController() error {
 }
 
 func requestCreateInvitation() (*resty.Response, error) {
-	if viper.GetString("invitation-type") == "connections" {
-		params := "?public=" + viper.GetString("public-invitation")
-		return client.R().
-			SetAuthToken(jwtToken).
-			Post(agentApiUrl + "/connections/create-invitation" + params)
-	} else {
+	invitationType := viper.GetString("invitation-type")
+	switch  invitationType {
+	case "oob" :
 		body := `{
 			"handshake_protocols": [ "connections/1.0" ],
 			"use_public_did": ` + viper.GetString("public-invitation") + `
@@ -201,6 +199,15 @@ func requestCreateInvitation() (*resty.Response, error) {
 			SetBody(body).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/out-of-band/create-invitation")
+	case "connections" :
+		params := "?public=" + viper.GetString("public-invitation")
+		return client.R().
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/connections/create-invitation" + params)
+	default:
+		err := errors.New("unexpected invitation type" + invitationType)
+		log.Fatal().Err(err).Caller().Msgf("")
+		return nil, err
 	}
 }
 

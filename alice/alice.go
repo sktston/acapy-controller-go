@@ -194,7 +194,8 @@ func receiveInvitation() (string, error) {
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/connections/receive-invitation")
 	default:
-		log.Fatal().Msgf("unexpected invitation type" + invitationType)
+		err = errors.New("unexpected invitation type" + invitationType)
+		return "", err
 	}
 
 	if err != nil {
