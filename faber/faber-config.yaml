@@ -1,7 +1,8 @@
 server-webhook-url: http://localhost:8040/webhooks
 agent-api-url: http://localhost:8021
-wallet-type: askar
+log-level: debug  # info debug
+wallet-type: askar  # askar indy
+invitation-type: connections  # oob connections
 public-invitation: true
 revoke-after-issue: false
-log-level: INFO
 use-multitenancy: true

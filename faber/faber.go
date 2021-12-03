@@ -187,14 +187,21 @@ func provisionController() error {
 }
 
 func requestCreateInvitation() (*resty.Response, error) {
-	body := `{
+	if viper.GetString("invitation-type") == "connections" {
+		params := "?public=" + viper.GetString("public-invitation")
+		return client.R().
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/connections/create-invitation" + params)
+	} else {
+		body := `{
 			"handshake_protocols": [ "connections/1.0" ],
 			"use_public_did": ` + viper.GetString("public-invitation") + `
 		}`
-	return client.R().
-		SetBody(body).
-		SetAuthToken(jwtToken).
-		Post(agentApiUrl + "/out-of-band/create-invitation")
+		return client.R().
+			SetBody(body).
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/out-of-band/create-invitation")
+	}
 }
 
 func createInvitation(c *gin.Context) {

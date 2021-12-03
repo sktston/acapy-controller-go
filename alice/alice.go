@@ -181,11 +181,22 @@ func receiveInvitation() (string, error) {
 	invitation, err := util.ParseInvitationUrl(resp.String())
 	log.Info().Msgf("invitation: " + string(invitation))
 
-	body := string(invitation)
-	resp, err = client.R().
-		SetBody(body).
-		SetAuthToken(jwtToken).
-		Post(agentApiUrl + "/out-of-band/receive-invitation")
+	invitationType := gjson.Get(invitation, `@type`).String()
+	switch  invitationType {
+	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation" :
+		resp, err = client.R().
+			SetBody(invitation).
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/out-of-band/receive-invitation")
+	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/connections/1.0/invitation" :
+		resp, err = client.R().
+			SetBody(invitation).
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/connections/receive-invitation")
+	default:
+		log.Fatal().Msgf("unexpected invitation type" + invitationType)
+	}
+
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err

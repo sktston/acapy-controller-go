@@ -52,7 +52,7 @@ func GetRandomInt(min int, max int) int {
 	return rand.Intn(max-min+1) + min
 }
 
-func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
+func ParseInvitationUrl(invitationUrl string) (string, error) {
 	urlParse, _ := url.Parse(invitationUrl)
 	query, _ := url.ParseQuery(urlParse.RawQuery)
 
@@ -66,13 +66,13 @@ func ParseInvitationUrl(invitationUrl string) ([]byte, error) {
 	if invitationEncoded == "" {
 		err := errors.New("invalid invitation-url format")
 		log.Error().Err(err).Msg("")
-		return nil, err
+		return "", err
 	}
 
 	invitation, err := base64.URLEncoding.DecodeString(invitationEncoded)
 	if err != nil {
 		log.Error().Err(err).Msg("")
-		return nil, err
+		return "", err
 	}
-	return invitation, nil
+	return string(invitation), nil
 }
