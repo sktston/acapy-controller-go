@@ -34,7 +34,7 @@ var (
 	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
 
 	pollingCyclePeriod = time.Second
-	pollingRetryMax = 100
+	pollingRetryMax    = 100
 
 	//go:embed alice-config.yaml
 	config []byte
@@ -58,24 +58,27 @@ func main() {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	log.Info().Msgf("connection id: " + connectionId)
-	if err = waitUntilConnectionActive(connectionId); err != nil {
+	if err = waitUntilConnectionState(connectionId, "active"); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	log.Info().Msgf("connection established")
 
 	// Receive Credential
 	log.Info().Msgf("Send credential proposal to receive credential offer")
-	if err = sendCredentialProposal(connectionId); err != nil {
+	credExId, err := sendCredentialProposal(connectionId)
+	if err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
-	credExId, err := waitUntilCredentialExchangeOfferReceived(connectionId)
 	log.Info().Msgf("credential exchange id: " + credExId)
+	if err = waitUntilCredentialExchangeState(credExId, "offer_received"); err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
 
 	log.Info().Msgf("Send credential request to receive credential")
 	if err = sendCredentialRequest(credExId); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
-	if err = waitUntilCredentialExchangeAcked(credExId); err != nil {
+	if err = waitUntilCredentialExchangeState(credExId, "credential_acked"); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	log.Info().Msgf("credential received")
@@ -92,7 +95,7 @@ func main() {
 	if err = sendPresentation(presExId); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
-	if err = waitUntilPresentationExchangeAcked(presExId); err != nil {
+	if err = waitUntilPresentationExchangeState(presExId, "presentation_acked"); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	log.Info().Msgf("presentation acked")
@@ -117,7 +120,7 @@ func initialization() {
 
 	// Set log level for zerolog and gin
 	switch strings.ToUpper(viper.GetString("log-level")) {
-	case "DEBUG" :
+	case "DEBUG":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		gin.SetMode(gin.DebugMode)
 	default:
@@ -182,13 +185,13 @@ func receiveInvitation() (string, error) {
 	log.Info().Msgf("invitation: " + string(invitation))
 
 	invitationType := gjson.Get(invitation, `@type`).String()
-	switch  invitationType {
-	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation" :
+	switch invitationType {
+	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation":
 		resp, err = client.R().
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/out-of-band/receive-invitation")
-	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/connections/1.0/invitation" :
+	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/connections/1.0/invitation":
 		resp, err = client.R().
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
@@ -208,10 +211,9 @@ func receiveInvitation() (string, error) {
 	return connectionId, nil
 }
 
-func waitUntilConnectionActive(connectionId string) error {
-	log.Info().Msgf("Wait until connection (state: active)")
+func waitUntilConnectionState(connectionId string, state string) error {
+	log.Info().Msgf("Wait until connection (state: " + state + ")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
-		time.Sleep(pollingCyclePeriod)
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/connections/" + connectionId)
@@ -220,18 +222,19 @@ func waitUntilConnectionActive(connectionId string) error {
 			return err
 		}
 		log.Debug().Msgf("response: " + resp.String())
-		state := gjson.Get(resp.String(), `state`).String()
-		log.Info().Msgf("connection state: " + state)
-		if state == "active" {
+		resState := gjson.Get(resp.String(), `state`).String()
+		log.Info().Msgf("connection state: " + resState)
+		if resState == state {
 			return nil
 		}
+		time.Sleep(pollingCyclePeriod)
 	}
-	err := errors.New("timeout - connection is not (state: active)")
+	err := errors.New("timeout - connection is not (state: " + state + ")")
 	log.Error().Err(err).Caller().Msgf("")
 	return err
 }
 
-func sendCredentialProposal(connectionId string) error {
+func sendCredentialProposal(connectionId string) (string, error) {
 	body := `{
 		"connection_id": "` + connectionId + `"
 	}`
@@ -241,36 +244,36 @@ func sendCredentialProposal(connectionId string) error {
 		Post(agentApiUrl + "/issue-credential/send-proposal")
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
-		return err
+		return "", err
 	}
 	log.Debug().Msgf("response: " + resp.String())
+	credExId := gjson.Get(resp.String(), "credential_exchange_id").String()
 
-	return nil
+	return credExId, nil
 }
 
-func waitUntilCredentialExchangeOfferReceived(connectionId string) (string, error) {
-	log.Info().Msgf("Wait until credential exchange (state: offer_received)")
+func waitUntilCredentialExchangeState(credExId string, state string) error {
+	log.Info().Msgf("Wait until credential exchange (state: " + state + ")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
-		time.Sleep(pollingCyclePeriod)
-		params := "?state=offer_received&connection_id=" + connectionId
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/issue-credential/records" + params)
+			Get(agentApiUrl + "/issue-credential/records/" + credExId)
 		if err != nil {
 			log.Error().Err(err).Caller().Msgf("")
-			return "", err
+			return err
 		}
 		log.Debug().Msgf("response: " + resp.String())
 
-		credExes := gjson.Get(resp.String(), "results").Array()
-		log.Info().Msgf("the number of credential exchange (state: offer_received): " + strconv.Itoa(len(credExes)) )
-		if len(credExes) > 0 {
-			return gjson.Get(credExes[0].String(), "credential_exchange_id").String(), nil
+		resState := gjson.Get(resp.String(), "state").String()
+		log.Info().Msgf("credential exchange state: " + resState)
+		if resState == state {
+			return nil
 		}
+		time.Sleep(pollingCyclePeriod)
 	}
-	err := errors.New("timeout - credential exchange is not (state: offer_received)")
+	err := errors.New("timeout - credential exchange is not (state: " + state + ")")
 	log.Error().Err(err).Caller().Msgf("")
-	return "", err
+	return err
 }
 
 func sendCredentialRequest(credExId string) error {
@@ -284,29 +287,6 @@ func sendCredentialRequest(credExId string) error {
 	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
-}
-
-func waitUntilCredentialExchangeAcked(credExId string) error {
-	log.Info().Msgf("Wait until credential exchange (state: credential_acked)")
-	for retry := 0; retry < pollingRetryMax; retry++ {
-		time.Sleep(pollingCyclePeriod)
-		resp, err := client.R().
-			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/issue-credential/records/" + credExId)
-		if err != nil {
-			log.Error().Err(err).Caller().Msgf("")
-			return err
-		}
-		log.Debug().Msgf("response: " + resp.String())
-		state := gjson.Get(resp.String(), `state`).String()
-		log.Info().Msgf("ccredential exchange state: " + state)
-		if state == "credential_acked" {
-			return nil
-		}
-	}
-	err := errors.New("timeout - credential exchange is not (state: credential_acked)")
-	log.Error().Err(err).Caller().Msgf("")
-	return err
 }
 
 func sendPresentationProposal(connectionId string) error {
@@ -345,7 +325,7 @@ func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, 
 		log.Debug().Msgf("response: " + resp.String())
 
 		presExes := gjson.Get(resp.String(), "results").Array()
-		log.Info().Msgf("the number of presentation exchange (state: request_received): " + strconv.Itoa(len(presExes)) )
+		log.Info().Msgf("the number of presentation exchange (state: request_received): " + strconv.Itoa(len(presExes)))
 		if len(presExes) > 0 {
 			return gjson.Get(presExes[0].String(), "presentation_exchange_id").String(), nil
 		}
@@ -416,8 +396,8 @@ func sendPresentation(presExId string) error {
 	return nil
 }
 
-func waitUntilPresentationExchangeAcked(presExId string) error {
-	log.Info().Msgf("Wait until presentation exchange (state: presentation_acked)")
+func waitUntilPresentationExchangeState(presExId string, state string) error {
+	log.Info().Msgf("Wait until presentation exchange (state: " + state + ")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		time.Sleep(pollingCyclePeriod)
 		resp, err := client.R().
@@ -428,13 +408,13 @@ func waitUntilPresentationExchangeAcked(presExId string) error {
 			return err
 		}
 		log.Debug().Msgf("response: " + resp.String())
-		state := gjson.Get(resp.String(), `state`).String()
-		log.Info().Msgf("presentation exchange state: " + state)
-		if state == "presentation_acked" {
+		resState := gjson.Get(resp.String(), `state`).String()
+		log.Info().Msgf("presentation exchange state: " + resState)
+		if resState == state {
 			return nil
 		}
 	}
-	err := errors.New("timeout - presentation exchange is not (state: presentation_acked)")
+	err := errors.New("timeout - presentation exchange is not (state: " + state + ")")
 	log.Error().Err(err).Caller().Msgf("")
 	return err
 }
