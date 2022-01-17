@@ -268,6 +268,10 @@ func waitUntilCredentialExchangeState(credExId string, state string) error {
 		log.Info().Msgf("credential exchange state: " + resState)
 		if resState == state {
 			return nil
+		} else if resState == "" {
+			errorMsg := gjson.Get(resp.String(), "error_msg").String()
+			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			return errors.New(errorMsg)
 		}
 		time.Sleep(pollingCyclePeriod)
 	}
@@ -412,6 +416,10 @@ func waitUntilPresentationExchangeState(presExId string, state string) error {
 		log.Info().Msgf("presentation exchange state: " + resState)
 		if resState == state {
 			return nil
+		} else if resState == "" {
+			errorMsg := gjson.Get(resp.String(), "error_msg").String()
+			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			return errors.New(errorMsg)
 		}
 	}
 	err := errors.New("timeout - presentation exchange is not (state: " + state + ")")
