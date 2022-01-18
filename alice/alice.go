@@ -169,6 +169,22 @@ func createWallet() error {
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
+	if viper.GetBool("enable-webhook") {
+		webhookUrl := "http://localhost:8080/webhooks/" + walletId
+		body = `{
+			"wallet_webhook_urls": ["` + webhookUrl + `"]
+		}`
+		log.Info().Msgf("Update the wallet: " + util.PrettyJson(body))
+		resp, err = client.R().
+			SetBody(body).
+			Put(agentApiUrl + "/multitenancy/wallet/" + walletId)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
+		log.Debug().Msgf("response: " + resp.String())
+	}
+
 	return nil
 }
 

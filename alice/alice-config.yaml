@@ -3,3 +3,4 @@ agent-api-url: http://localhost:8021
 log-level: debug  # info debug
 wallet-type: askar  # askar indy
 use-multitenancy: true
+enable-webhook: false
