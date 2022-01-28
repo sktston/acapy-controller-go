@@ -46,7 +46,6 @@ var (
 	config []byte
 )
 
-
 func main() {
 	// Initialization
 	initialization()
@@ -83,7 +82,7 @@ func initialization() {
 
 	// Set log level for zerolog and gin
 	switch strings.ToUpper(viper.GetString("log-level")) {
-	case "DEBUG" :
+	case "DEBUG":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		gin.SetMode(gin.DebugMode)
 	default:
@@ -104,6 +103,7 @@ func startWebHookServer() (*http.Server, error) {
 
 	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationUrl)
+	router.GET("/invitation-url-with-proof", createInvitationUrlProof)
 	router.GET("/invitation-qr", createInvitationUrlQr)
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
@@ -189,8 +189,8 @@ func provisionController() error {
 
 func requestCreateInvitation() (*resty.Response, error) {
 	invitationType := viper.GetString("invitation-type")
-	switch  invitationType {
-	case "oob" :
+	switch invitationType {
+	case "oob":
 		body := `{
 			"handshake_protocols": [ "connections/1.0" ],
 			"use_public_did": ` + viper.GetString("public-invitation") + `
@@ -199,13 +199,33 @@ func requestCreateInvitation() (*resty.Response, error) {
 			SetBody(body).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/out-of-band/create-invitation")
-	case "connections" :
+	case "connections":
 		params := "?public=" + viper.GetString("public-invitation")
 		return client.R().
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/connections/create-invitation" + params)
 	default:
-		err := errors.New("unexpected invitation type" + invitationType)
+		err := errors.New("unexpected invitation type: " + invitationType)
+		log.Fatal().Err(err).Caller().Msgf("")
+		return nil, err
+	}
+}
+
+func requestCreateInvitationWithProof(presExId string) (*resty.Response, error) {
+	invitationType := viper.GetString("invitation-type")
+	switch invitationType {
+	case "oob":
+		body := `{
+			"handshake_protocols": [ "connections/1.0" ],
+			"attachments": [ { "id": "` + presExId + `", "type": "present-proof" } ],
+			"use_public_did": ` + viper.GetString("public-invitation") + `
+		}`
+		return client.R().
+			SetBody(body).
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/out-of-band/create-invitation")
+	default:
+		err := errors.New("unexpected invitation type: " + invitationType)
 		log.Fatal().Err(err).Caller().Msgf("")
 		return nil, err
 	}
@@ -227,6 +247,26 @@ func createInvitation(c *gin.Context) {
 
 func createInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation()
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Debug().Msgf("response: " + resp.String())
+
+	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
+	log.Info().Msgf("createInvitationUrl: " + invitationUrl)
+	c.String(http.StatusOK, invitationUrl)
+}
+
+func createInvitationUrlProof(c *gin.Context) {
+	presExId, err := createProofRequest()
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	resp, err := requestCreateInvitationWithProof(presExId)
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -263,7 +303,7 @@ func handleEvent(c *gin.Context) {
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		log.Error().Err(err).Caller().Msgf("invalid JSON")
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: "+ err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
 		return
 	}
 
@@ -327,7 +367,7 @@ func handleEvent(c *gin.Context) {
 
 	default:
 		log.Warn().Msgf("- Warning Unexpected topic:" + topic)
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:"+ topic})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:" + topic})
 		return
 	}
 	c.Status(http.StatusOK)
@@ -540,6 +580,61 @@ func sendCredentialOffer(credExId string) error {
 	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
+}
+
+func createProofRequest() (string, error) {
+	curUnixTime := strconv.FormatInt(time.Now().Unix(), 10)
+
+	body := `{
+		"proof_request": {
+			"name": "proof_name",
+			"version": "1.0",
+			"requested_attributes": {
+				"attr_name": {
+					"name": "name",
+					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
+					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				},
+				"attr_date": {
+					"name": "date",
+					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
+					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				},
+				"attr_degree": {
+					"name": "degree",
+					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
+					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				},
+				"attr_photo": {
+					"name": "photo",
+					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
+					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				}
+			},
+			"requested_predicates": {
+				"pred_age": {
+					"name": "age",
+					"p_type": ">=",
+					"p_value": 20,
+					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
+					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				}
+			}
+		}
+	}`
+	log.Debug().Msgf("body: " + body)
+	resp, err := client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(agentApiUrl + "/present-proof/create-request")
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		return "", err
+	}
+	log.Debug().Msgf("response: " + resp.String())
+	presExId := gjson.Get(resp.String(), "presentation_exchange_id").String()
+
+	return presExId, nil
 }
 
 func sendProofRequest(connectionId string) error {

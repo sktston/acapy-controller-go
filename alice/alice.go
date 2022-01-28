@@ -83,22 +83,34 @@ func main() {
 	}
 	log.Info().Msgf("credential received")
 
-	// Send presentation
-	log.Info().Msgf("Send presentation proposal to receive presentation request")
-	if err = sendPresentationProposal(connectionId); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-	presExId, err := waitUntilPresentationExchangeRequestReceived(connectionId)
-	log.Info().Msgf("presentation exchange id: " + credExId)
+	if viper.GetBool("enable-invitation-with-proof") {
+		// Send presentation via invitation
+		// TODO: aca-py must booted with --auto-respond-presentation-request
+		// Note: invitation's requests~attach.data.json.@id = pres_ex_record's thread_id
+		connectionId, err = receiveInvitationWithProof()
+		if err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+		log.Info().Msgf("connection id: " + connectionId)
+		log.Info().Msgf("presentation sent") // final state is presentation_sent
+	} else {
+		// Send presentation
+		log.Info().Msgf("Send presentation proposal to receive presentation request")
+		if err = sendPresentationProposal(connectionId); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+		presExId, err := waitUntilPresentationExchangeRequestReceived(connectionId)
+		log.Info().Msgf("presentation exchange id: " + credExId)
 
-	log.Info().Msgf("Send presentation")
-	if err = sendPresentation(presExId); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Info().Msgf("Send presentation")
+		if err = sendPresentation(presExId); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+		if err = waitUntilPresentationExchangeState(presExId, "presentation_acked"); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+		log.Info().Msgf("presentation acked") // final state is presentation_acked
 	}
-	if err = waitUntilPresentationExchangeState(presExId, "presentation_acked"); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
-	}
-	log.Info().Msgf("presentation acked")
 
 	// (multitenancy) Delete wallet
 	if viper.GetBool("use-multitenancy") == true {
@@ -212,6 +224,39 @@ func receiveInvitation() (string, error) {
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/connections/receive-invitation")
+	default:
+		err = errors.New("unexpected invitation type" + invitationType)
+		return "", err
+	}
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		return "", err
+	}
+	log.Debug().Msgf("response: " + resp.String())
+	connectionId := gjson.Get(resp.String(), `connection_id`).String()
+
+	return connectionId, nil
+}
+
+func receiveInvitationWithProof() (string, error) {
+	resp, err := client.R().
+		Get(viper.GetString("issuer-invitation-url-with-proof"))
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		return "", err
+	}
+	log.Debug().Msgf("response: " + resp.String())
+
+	invitation, err := util.ParseInvitationUrl(resp.String())
+	log.Info().Msgf("invitation: " + string(invitation))
+
+	invitationType := gjson.Get(invitation, `@type`).String()
+	switch invitationType {
+	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation":
+		resp, err = client.R().
+			SetBody(invitation).
+			SetAuthToken(jwtToken).
+			Post(agentApiUrl + "/out-of-band/receive-invitation")
 	default:
 		err = errors.New("unexpected invitation type" + invitationType)
 		return "", err
