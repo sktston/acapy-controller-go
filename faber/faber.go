@@ -16,7 +16,6 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/skip2/go-qrcode"
 	"github.com/sktston/acapy-controller-go/util"
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
@@ -101,10 +100,9 @@ func startWebHookServer() (*http.Server, error) {
 	router.Use(gin.Recovery())
 	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 
-	router.GET("/invitation", createInvitation)
 	router.GET("/invitation-url", createInvitationUrl)
-	router.GET("/invitation-url-with-proof", createInvitationUrlProof)
-	router.GET("/invitation-qr", createInvitationUrlQr)
+	router.GET("/oob-invitation-url", createOobInvitationUrl)
+	router.GET("/oob-invitation-url-with-proof", createOobInvitationUrlProof)
 	router.POST("/webhooks/topic/:topic", handleEvent)
 
 	// Get port from HolderWebhookUrl
@@ -187,8 +185,7 @@ func provisionController() error {
 	return nil
 }
 
-func requestCreateInvitation() (*resty.Response, error) {
-	invitationType := viper.GetString("invitation-type")
+func requestCreateInvitation(invitationType string) (*resty.Response, error) {
 	switch invitationType {
 	case "oob":
 		body := `{
@@ -211,42 +208,20 @@ func requestCreateInvitation() (*resty.Response, error) {
 	}
 }
 
-func requestCreateInvitationWithProof(presExId string) (*resty.Response, error) {
-	invitationType := viper.GetString("invitation-type")
-	switch invitationType {
-	case "oob":
-		body := `{
+func requestCreateOobInvitationWithProof(presExId string) (*resty.Response, error) {
+	body := `{
 			"handshake_protocols": [ "connections/1.0" ],
 			"attachments": [ { "id": "` + presExId + `", "type": "present-proof" } ],
 			"use_public_did": ` + viper.GetString("public-invitation") + `
 		}`
-		return client.R().
-			SetBody(body).
-			SetAuthToken(jwtToken).
-			Post(agentApiUrl + "/out-of-band/create-invitation")
-	default:
-		err := errors.New("unexpected invitation type: " + invitationType)
-		log.Fatal().Err(err).Caller().Msgf("")
-		return nil, err
-	}
-}
-
-func createInvitation(c *gin.Context) {
-	resp, err := requestCreateInvitation()
-	if err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	log.Debug().Msgf("response: " + resp.String())
-
-	invitation := gjson.Get(resp.String(), "invitation").String()
-	log.Info().Msgf("createInvitation: " + invitation)
-	c.String(http.StatusOK, invitation)
+	return client.R().
+		SetBody(body).
+		SetAuthToken(jwtToken).
+		Post(agentApiUrl + "/out-of-band/create-invitation")
 }
 
 func createInvitationUrl(c *gin.Context) {
-	resp, err := requestCreateInvitation()
+	resp, err := requestCreateInvitation("connections")
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -259,14 +234,28 @@ func createInvitationUrl(c *gin.Context) {
 	c.String(http.StatusOK, invitationUrl)
 }
 
-func createInvitationUrlProof(c *gin.Context) {
+func createOobInvitationUrl(c *gin.Context) {
+	resp, err := requestCreateInvitation("oob")
+	if err != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Debug().Msgf("response: " + resp.String())
+
+	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
+	log.Info().Msgf("createOobInvitationUrl: " + invitationUrl)
+	c.String(http.StatusOK, invitationUrl)
+}
+
+func createOobInvitationUrlProof(c *gin.Context) {
 	presExId, err := createProofRequest()
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	resp, err := requestCreateInvitationWithProof(presExId)
+	resp, err := requestCreateOobInvitationWithProof(presExId)
 	if err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -277,24 +266,6 @@ func createInvitationUrlProof(c *gin.Context) {
 	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
 	log.Info().Msgf("createInvitationUrl: " + invitationUrl)
 	c.String(http.StatusOK, invitationUrl)
-}
-
-func createInvitationUrlQr(c *gin.Context) {
-	resp, err := requestCreateInvitation()
-	if err != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	log.Debug().Msgf("response: " + resp.String())
-
-	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
-	log.Info().Msgf("createInvitationUrlQr: " + invitationUrl)
-
-	// Modify qrcode.Low to qrcode.Medium/High for reliable error recovery
-	qrCode, _ := qrcode.New(invitationUrl, qrcode.Low)
-	qrCodeString := qrCode.ToSmallString(false)
-	c.String(http.StatusOK, qrCodeString)
 }
 
 func handleEvent(c *gin.Context) {

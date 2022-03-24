@@ -1,4 +1,4 @@
-issuer-invitation-url: http://localhost:8040/invitation-url
+issuer-invitation-url: http://localhost:8040/invitation-url  # invitation-url oob-invitation-url
 agent-api-url: http://localhost:8021
 log-level: debug  # info debug
 wallet-type: indy  # askar indy
@@ -6,4 +6,4 @@ use-multitenancy: true
 enable-webhook: false
 
 enable-invitation-with-proof: false
-issuer-invitation-url-with-proof: http://localhost:8040/invitation-url-with-proof
+issuer-invitation-url-with-proof: http://localhost:8040/oob-invitation-url-with-proof
