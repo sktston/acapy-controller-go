@@ -500,3 +500,20 @@ func deleteWallet() error {
 
 	return nil
 }
+
+func deleteAllConnections() {
+	resp, err := client.R().
+		SetAuthToken(jwtToken).
+		Get(agentApiUrl + "/connections")
+	if err != nil {
+		log.Fatal().Err(err).Caller().Msgf("")
+	}
+	conns := gjson.Get(resp.String(), "results").Array()
+	for i, s := range conns {
+		connId := gjson.Get(s.String(), "connection_id").String()
+		log.Info().Msgf("#%d - delete connId: %s", i, connId)
+		resp, err = client.R().
+			SetAuthToken(jwtToken).
+			Delete(agentApiUrl + "/connections/" + connId)
+	}
+}
