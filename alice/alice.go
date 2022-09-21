@@ -400,6 +400,27 @@ func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, 
 	return "", err
 }
 
+func getMatchingCredentialId(credentials string, mAttr string) (string, error) {
+	// sample credentials
+	//credentials = "[{\"cred_info\": {\"referent\": \"99f35030-2377-4db7-87bf-77b7b524065c\", \"schema_id\": \"6eAZ7gtyXSboPmt7suCTuz:2:degree_schema:88.39.31\", \"cred_def_id\": \"6eAZ7gtyXSboPmt7suCTuz:3:CL:813249544:tag.88.39.31\", \"rev_reg_id\": \"6eAZ7gtyXSboPmt7suCTuz:4:6eAZ7gtyXSboPmt7suCTuz:3:CL:813249544:tag.88.39.31:CL_ACCUM:29c1d7fe-064e-4281-b34c-ef39fd97a87f\", \"cred_rev_id\": \"1\", \"attrs\": {\"degree\": \"maths\", \"name\": \"alice\", \"photo\": \"base64EncodedJpegImage\", \"date\": \"05-2018\", \"age\": \"25\"}}, \"interval\": null, \"presentation_referents\": [\"attr_date\", \"attr_degree\", \"attr_photo\", \"pred_age\", \"attr_name\"]}, {\"cred_info\": {\"referent\": \"787365df-1fe1-4c6e-9b56-e3602ffccb0e\", \"schema_id\": \"6eAZ7gtyXSboPmt7suCTuz:2:degree_schema2:88.39.31\", \"cred_def_id\": \"6eAZ7gtyXSboPmt7suCTuz:3:CL:1456292544:tag.88.39.312\", \"rev_reg_id\": \"6eAZ7gtyXSboPmt7suCTuz:4:6eAZ7gtyXSboPmt7suCTuz:3:CL:1456292544:tag.88.39.312:CL_ACCUM:55e137eb-49fc-45e6-89ab-a3064daa7b04\", \"cred_rev_id\": \"1\", \"attrs\": {\"phone\": \"010-1234-5637\", \"name\": \"alice\"}}, \"interval\": null, \"presentation_referents\": [\"attr_phone\"]}]"
+
+	credIDList := gjson.Get(credentials, "#.cred_info.referent").Array()
+	presAttrsList := gjson.Get(credentials, "#.presentation_referents").Array()
+
+	credId := ""
+	for idx, presAttrs := range presAttrsList {
+		for _, presAttr := range presAttrs.Array() {
+			if presAttr.String() == mAttr {
+				credId = credIDList[idx].String()
+			}
+		}
+	}
+	if credId == "" {
+		return "", errors.New("not found matching credential - matching attr:" + mAttr)
+	}
+	return credId, nil
+}
+
 func sendPresentation(presExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
@@ -415,24 +436,16 @@ func sendPresentation(presExId string) error {
 		return err
 	}
 	log.Debug().Msgf("response: " + resp.String())
-
 	credentials := resp.String()
-	credRevIDs := gjson.Get(credentials, "#.cred_info.cred_rev_id").Array()
-	credIDs := gjson.Get(credentials, "#.cred_info.referent").Array()
-
-	var maxRevId uint64 = 0
-	var credId string
-	for idx, credRevID := range credRevIDs {
-		if credRevID.Uint() >= maxRevId {
-			maxRevId = credRevID.Uint()
-			credId = credIDs[idx].String()
-		}
-	}
-	log.Info().Msgf("Use latest credential in demo - credential id: " + credId)
 
 	newReqAttrs := "{}"
 	reqAttrs := gjson.Get(presReq, "requested_attributes").Map()
 	for key := range reqAttrs {
+		credId, err := getMatchingCredentialId(credentials, key)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".cred_id", credId)
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".revealed", true)
 	}
@@ -440,6 +453,11 @@ func sendPresentation(presExId string) error {
 	newReqPreds := "{}"
 	reqPreds := gjson.Get(presReq, "requested_predicates").Map()
 	for key := range reqPreds {
+		credId, err := getMatchingCredentialId(credentials, key)
+		if err != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 		newReqPreds, _ = sjson.Set(newReqPreds, key+".cred_id", credId)
 	}
 
@@ -448,6 +466,7 @@ func sendPresentation(presExId string) error {
 		"requested_predicates": ` + newReqPreds + `,
 		"self_attested_attributes": {}
 	}`
+	log.Debug().Msgf("send presentation body: " + body)
 	resp, err = client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
