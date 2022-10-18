@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 	"math/rand"
@@ -39,10 +40,14 @@ func PrettyJson(jsonString string) string {
 	var unmarshalData interface{}
 
 	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
-	if err != nil { log.Error().Err(err).Msg("") }
+	if err != nil {
+		log.Error().Err(err).Msg("")
+	}
 
 	prettyJsonAsBytes, err := json.MarshalIndent(unmarshalData, "", "  ")
-	if err != nil { log.Error().Err(err).Msg("") }
+	if err != nil {
+		log.Error().Err(err).Msg("")
+	}
 
 	return string(prettyJsonAsBytes)
 }
@@ -57,10 +62,12 @@ func ParseInvitationUrl(invitationUrl string) (string, error) {
 	query, _ := url.ParseQuery(urlParse.RawQuery)
 
 	invitationEncoded := ""
-	_, ok := query["oob"]; if ok { // out-of-band invitation-url case
+	_, ok := query["oob"]
+	if ok { // out-of-band invitation-url case
 		invitationEncoded = query["oob"][0]
 	}
-	_, ok = query["c_i"]; if ok { // connection invitation-url case
+	_, ok = query["c_i"]
+	if ok { // connection invitation-url case
 		invitationEncoded = query["c_i"][0]
 	}
 	if invitationEncoded == "" {
@@ -75,4 +82,16 @@ func ParseInvitationUrl(invitationUrl string) (string, error) {
 		return "", err
 	}
 	return string(invitation), nil
+}
+
+func CheckHttpResult(resp *resty.Response, err error) error {
+	if resp.IsSuccess() != true {
+		return errors.New(string(resp.Body()))
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

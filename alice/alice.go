@@ -23,6 +23,13 @@ import (
 	"time"
 )
 
+const (
+	pollingCyclePeriod = 1 * time.Second
+	pollingRetryMax    = 100
+
+	clientTimeout = 30 * time.Minute
+)
+
 var (
 	client                          = resty.New()
 	agentApiUrl, jwtToken, walletId string
@@ -32,9 +39,6 @@ var (
 		strconv.Itoa(util.GetRandomInt(1, 99))
 	walletName = "alice." + version
 	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-
-	pollingCyclePeriod = time.Second
-	pollingRetryMax    = 100
 
 	//go:embed alice-config.yaml
 	config []byte
@@ -100,6 +104,9 @@ func main() {
 			log.Fatal().Err(err).Caller().Msgf("")
 		}
 		presExId, err := waitUntilPresentationExchangeRequestReceived(connectionId)
+		if err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
 		log.Info().Msgf("presentation exchange id: " + credExId)
 
 		log.Info().Msgf("Send presentation")
@@ -112,8 +119,17 @@ func main() {
 		log.Info().Msgf("presentation acked") // final state is presentation_acked
 	}
 
+	// Delete connections for clean up
+	if viper.GetBool("clean-up-connection") == true {
+		log.Info().Msgf("Delete connections")
+		if err = deleteAllConnections(); err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
+	}
+
 	// (multitenancy) Delete wallet
 	if viper.GetBool("use-multitenancy") == true {
+		log.Info().Msgf("Delete wallet: %s(%s)", walletName, walletId)
 		if err = deleteWallet(); err != nil {
 			log.Fatal().Err(err).Caller().Msgf("")
 		}
@@ -141,7 +157,7 @@ func initialization() {
 	}
 
 	// Set client configuration
-	client.SetTimeout(30 * time.Minute)
+	client.SetTimeout(clientTimeout)
 	client.SetHeader("Content-Type", "application/json")
 }
 
@@ -173,7 +189,7 @@ func createWallet() error {
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -190,7 +206,7 @@ func createWallet() error {
 		resp, err = client.R().
 			SetBody(body).
 			Put(agentApiUrl + "/multitenancy/wallet/" + walletId)
-		if err != nil {
+		if util.CheckHttpResult(resp, err) != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -203,7 +219,7 @@ func createWallet() error {
 func receiveInvitation() (string, error) {
 	resp, err := client.R().
 		Get(viper.GetString("issuer-invitation-url"))
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -228,7 +244,7 @@ func receiveInvitation() (string, error) {
 		err = errors.New("unexpected invitation type" + invitationType)
 		return "", err
 	}
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -241,7 +257,7 @@ func receiveInvitation() (string, error) {
 func receiveInvitationWithProof() (string, error) {
 	resp, err := client.R().
 		Get(viper.GetString("issuer-invitation-url-with-proof"))
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -262,7 +278,7 @@ func receiveInvitationWithProof() (string, error) {
 		return "", err
 	}
 
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -278,7 +294,7 @@ func waitUntilConnectionState(connectionId string, state string) error {
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/connections/" + connectionId)
-		if err != nil {
+		if util.CheckHttpResult(resp, err) != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -287,6 +303,10 @@ func waitUntilConnectionState(connectionId string, state string) error {
 		log.Info().Msgf("connection state: " + resState)
 		if resState == state {
 			return nil
+		} else if resState == "" {
+			errorMsg := gjson.Get(resp.String(), "error_msg").String()
+			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			return errors.New(errorMsg)
 		}
 		time.Sleep(pollingCyclePeriod)
 	}
@@ -303,7 +323,7 @@ func sendCredentialProposal(connectionId string) (string, error) {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/send-proposal")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -319,7 +339,7 @@ func waitUntilCredentialExchangeState(credExId string, state string) error {
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/issue-credential/records/" + credExId)
-		if err != nil {
+		if util.CheckHttpResult(resp, err) != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -345,7 +365,7 @@ func sendCredentialRequest(credExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-request")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -366,7 +386,7 @@ func sendPresentationProposal(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-proposal")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -383,7 +403,7 @@ func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, 
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/present-proof/records" + params)
-		if err != nil {
+		if util.CheckHttpResult(resp, err) != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return "", err
 		}
@@ -425,13 +445,17 @@ func sendPresentation(presExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId)
+	if util.CheckHttpResult(resp, err) != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		return err
+	}
 	log.Debug().Msgf("response: " + resp.String())
 	presReq := gjson.Get(resp.String(), "presentation_request").String()
 
 	resp, err = client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId + "/credentials")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -471,7 +495,7 @@ func sendPresentation(presExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/records/" + presExId + "/send-presentation")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -487,7 +511,7 @@ func waitUntilPresentationExchangeState(presExId string, state string) error {
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/present-proof/records/" + presExId)
-		if err != nil {
+		if util.CheckHttpResult(resp, err) != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -511,7 +535,7 @@ func deleteWallet() error {
 	// Delete wallet
 	resp, err := client.R().
 		Post(agentApiUrl + "/multitenancy/wallet/" + walletId + "/remove")
-	if err != nil {
+	if util.CheckHttpResult(resp, err) != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -520,19 +544,26 @@ func deleteWallet() error {
 	return nil
 }
 
-func deleteAllConnections() {
+func deleteAllConnections() error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/connections")
-	if err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+	if util.CheckHttpResult(resp, err) != nil {
+		log.Error().Err(err).Caller().Msgf("")
+		return err
 	}
 	conns := gjson.Get(resp.String(), "results").Array()
-	for i, s := range conns {
-		connId := gjson.Get(s.String(), "connection_id").String()
-		log.Info().Msgf("#%d - delete connId: %s", i, connId)
+	for idx, conn := range conns {
+		connId := gjson.Get(conn.String(), "connection_id").String()
+		log.Debug().Msgf("#%d - delete connId: %s", idx, connId)
 		resp, err = client.R().
 			SetAuthToken(jwtToken).
 			Delete(agentApiUrl + "/connections/" + connId)
+		if util.CheckHttpResult(resp, err) != nil {
+			log.Error().Err(err).Caller().Msgf("")
+			return err
+		}
 	}
+
+	return nil
 }
