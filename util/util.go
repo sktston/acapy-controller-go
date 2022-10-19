@@ -135,6 +135,7 @@ func DeleteAcapyData(agentApiUrl string, jwtToken string, walletId string, delet
 			if err := deleteWallet(client.SetAuthToken(""), walletId); err != nil {
 				return err
 			}
+			client.SetAuthToken(jwtToken)
 		}
 	}
 

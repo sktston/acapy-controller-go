@@ -85,7 +85,7 @@ func main() {
 		}
 	}
 
-	// Shut down server
+	// Shut down web hook server
 	if err = shutdownWebHookServer(httpServer); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
