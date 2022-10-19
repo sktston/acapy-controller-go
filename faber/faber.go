@@ -76,10 +76,16 @@ func main() {
 	<-ctrlC
 	log.Info().Msg("Ctrl-C detected, it may take a couple of seconds to clean up...")
 
-	if err = cleanUpControllerData(); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+	// Delete acapy data
+	if viper.GetBool("delete-data-at-exit") == true {
+		err = util.DeleteAcapyData(agentApiUrl, jwtToken, walletId,
+			"connection", "credential_exchange", "presentation_exchange", "wallet")
+		if err != nil {
+			log.Fatal().Err(err).Caller().Msgf("")
+		}
 	}
 
+	// Shut down server
 	if err = shutdownWebHookServer(httpServer); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
@@ -247,7 +253,7 @@ func requestCreateOobInvitationWithProof(presExId string) (*resty.Response, erro
 
 func createInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation("connections")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -261,7 +267,7 @@ func createInvitationUrl(c *gin.Context) {
 
 func createOobInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation("oob")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -281,7 +287,7 @@ func createOobInvitationUrlProof(c *gin.Context) {
 		return
 	}
 	resp, err := requestCreateOobInvitationWithProof(presExId)
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -376,7 +382,7 @@ func obtainStewardJwtToken() error {
 	resp, err := client.R().
 		SetQueryParam("wallet_name", stewardWallet).
 		Get(agentApiUrl + "/multitenancy/wallets")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -394,7 +400,7 @@ func obtainStewardJwtToken() error {
 		resp, err = client.R().
 			SetBody(body).
 			Post(agentApiUrl + "/multitenancy/wallet")
-		if util.CheckHttpResult(resp, err) != nil {
+		if err := util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -407,7 +413,7 @@ func obtainStewardJwtToken() error {
 			SetBody(body).
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/create")
-		if util.CheckHttpResult(resp, err) != nil {
+		if err := util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -419,7 +425,7 @@ func obtainStewardJwtToken() error {
 			SetQueryParam("did", stewardDid).
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/public")
-		if util.CheckHttpResult(resp, err) != nil {
+		if err := util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -430,7 +436,7 @@ func obtainStewardJwtToken() error {
 		log.Info().Msgf("Found steward wallet - Get jwt token with wallet id: " + stewardWalletId)
 		resp, err = client.R().
 			Post(agentApiUrl + "/multitenancy/wallet/" + stewardWalletId + "/token")
-		if util.CheckHttpResult(resp, err) != nil {
+		if err := util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -453,7 +459,7 @@ func createWallet() error {
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -469,7 +475,7 @@ func createPublicDid() error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/create")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -486,7 +492,7 @@ func createPublicDid() error {
 		SetQueryParam("role", "ENDORSER").
 		SetAuthToken(stewardJwtToken).
 		Post(agentApiUrl + "/ledger/register-nym")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -497,7 +503,7 @@ func createPublicDid() error {
 		SetQueryParam("did", did).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/public")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -517,7 +523,7 @@ func createSchema() error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/schemas")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -539,7 +545,7 @@ func createCredentialDefinition() error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/credential-definitions")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -570,7 +576,7 @@ func sendCredentialOffer(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-offer")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -624,7 +630,7 @@ func createProofRequest() (string, error) {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/create-request")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return "", err
 	}
@@ -680,7 +686,7 @@ func sendProofRequest(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-request")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -698,7 +704,7 @@ func revokeCredential(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/revocation/revoke")
-	if util.CheckHttpResult(resp, err) != nil {
+	if err := util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msgf("")
 		return err
 	}
@@ -747,42 +753,6 @@ func printProofResult(body map[string]interface{}) error {
 		pValue := valMap["p_value"].String()
 		log.Info().Msgf("- " + key + " - " + name + ": " + pType + " " + pValue)
 	}
-
-	return nil
-}
-
-func cleanUpControllerData() error {
-	// Delete all connections
-	log.Info().Msgf("Delete connections")
-	resp, err := client.R().
-		SetAuthToken(jwtToken).
-		Get(agentApiUrl + "/connections")
-	if util.CheckHttpResult(resp, err) != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
-	}
-	conns := gjson.Get(resp.String(), "results").Array()
-	for idx, conn := range conns {
-		connId := gjson.Get(conn.String(), "connection_id").String()
-		log.Debug().Msgf("#%d - delete connId: %s", idx, connId)
-		resp, err = client.R().
-			SetAuthToken(jwtToken).
-			Delete(agentApiUrl + "/connections/" + connId)
-		if util.CheckHttpResult(resp, err) != nil {
-			log.Error().Err(err).Caller().Msgf("")
-			return err
-		}
-	}
-
-	// Delete wallet
-	log.Info().Msgf("Delete wallet: %s(%s)", walletName, walletId)
-	resp, err = client.R().
-		Post(agentApiUrl + "/multitenancy/wallet/" + walletId + "/remove")
-	if util.CheckHttpResult(resp, err) != nil {
-		log.Error().Err(err).Caller().Msgf("")
-		return err
-	}
-	log.Debug().Msgf("response: " + resp.String())
 
 	return nil
 }

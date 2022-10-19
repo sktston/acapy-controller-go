@@ -5,3 +5,4 @@ wallet-type: indy  # askar indy
 public-invitation: true
 revoke-after-issue: false
 use-multitenancy: true
+delete-data-at-exit: true

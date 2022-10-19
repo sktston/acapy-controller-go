@@ -10,7 +10,7 @@ require (
 	github.com/rs/zerolog v1.23.0
 	github.com/sktston/acapy-controller-go/util v0.0.0-00010101000000-000000000000
 	github.com/spf13/viper v1.9.0
-	github.com/tidwall/gjson v1.8.1
+	github.com/tidwall/gjson v1.14.3
 	github.com/tidwall/sjson v1.1.7
 )
 
@@ -35,8 +35,8 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
-	github.com/tidwall/match v1.0.3 // indirect
-	github.com/tidwall/pretty v1.1.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/ugorji/go/codec v1.1.7 // indirect
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
 	golang.org/x/net v0.0.0-20211029224645-99673261e6eb // indirect
