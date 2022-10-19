@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -101,9 +102,13 @@ func initialization() {
 	case "DEBUG":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		gin.SetMode(gin.DebugMode)
+		gin.DefaultWriter = os.Stdout
+		gin.DefaultErrorWriter = os.Stderr
 	default:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 		gin.SetMode(gin.ReleaseMode)
+		gin.DefaultWriter = ioutil.Discard
+		gin.DefaultErrorWriter = ioutil.Discard
 	}
 
 	// Set client configuration
@@ -355,6 +360,7 @@ func handleEvent(c *gin.Context) {
 	case "revocation_registry":
 	case "problem_report":
 	case "issuer_cred_rev":
+	case "out_of_band":
 
 	default:
 		log.Warn().Msgf("- Warning Unexpected topic:" + topic)
