@@ -39,8 +39,9 @@ $ ./faber
 ```
 
 ### Run Alice controller
-- Alice controller opens 8050 port. 
-- It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/ 
+- Alice controller polls the Alice agent periodically instead of receiving webhooks
+  - ~~Alice controller opens 8050 port.~~ (deprecated)
+  - ~~It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/~~ (deprecated)
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
 - Detailed configuration is in [alice-config.yaml](./alice/alice-config.yaml)
 ```
