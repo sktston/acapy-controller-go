@@ -119,7 +119,7 @@ func main() {
 
 	// Delete acapy data
 	if viper.GetBool("delete-data-at-exit") == true {
-		err = util.DeleteAcapyData(agentApiUrl, jwtToken, walletId,
+		err = util.DeleteAgentData(agentApiUrl, jwtToken, walletId,
 			"connection", "credential", "credential_exchange", "presentation_exchange", "wallet")
 		if err != nil {
 			log.Fatal().Err(err).Caller().Msgf("")

@@ -97,7 +97,7 @@ func CheckHttpResult(resp *resty.Response, err error) error {
 	return nil
 }
 
-func DeleteAcapyData(agentApiUrl string, jwtToken string, walletId string, dataTypes ...string) error {
+func DeleteAgentData(agentApiUrl string, jwtToken string, walletId string, dataTypes ...string) error {
 	client := resty.New().SetBaseURL(agentApiUrl).SetAuthToken(jwtToken)
 
 	for _, dataType := range dataTypes {
