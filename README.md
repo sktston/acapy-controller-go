@@ -10,7 +10,7 @@ Repository structure details:
 ├── alice/       # Alice (Holder) controller implementation
 ├── faber/       # Faber (Issuer&Verifier) controller implementation
 ├── util/        # Common utility functions
-└── docker/      # docker-compose.yaml to run ACA-Py agent
+└── docker/      # docker-compose.yml to run ACA-Py agent
 ```
 
 ## Prerequisite 
@@ -31,7 +31,7 @@ $ docker-compose up --build
 - Faber controller opens 8040 port.
 - It receives webhook message from Faber agent by POST http://localhost:8040/webhooks/topic/{topic}/ 
 - Also, It presents invitation-url by GET http://localhost:8040/invitation-url
-- Detailed configuration is in [faber-config.yaml](./faber/faber-config.yaml)
+- Detailed configuration is in [faber-config.yml](./faber/faber-config.yml)
 ```
 $ cd faber
 $ go build
@@ -43,7 +43,7 @@ $ ./faber
   - ~~Alice controller opens 8050 port.~~ (deprecated)
   - ~~It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/~~ (deprecated)
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
-- Detailed configuration is in [alice-config.yaml](./alice/alice-config.yaml)
+- Detailed configuration is in [alice-config.yml](./alice/alice-config.yml)
 ```
 $ cd alice
 $ go build

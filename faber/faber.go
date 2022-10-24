@@ -35,7 +35,7 @@ import (
 const (
 	clientTimeout  = 30 * time.Minute
 	stewardSeed    = "000000000000000000000000Steward1"
-	configFileName = "faber-config.yaml"
+	configFileName = "faber-config.yml"
 )
 
 var (

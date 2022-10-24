@@ -28,7 +28,7 @@ const (
 	pollingRetryMax    = 100
 
 	clientTimeout  = 30 * time.Minute
-	configFileName = "alice-config.yaml"
+	configFileName = "alice-config.yml"
 )
 
 var (
