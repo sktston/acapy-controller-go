@@ -33,8 +33,9 @@ import (
 )
 
 const (
-	clientTimeout = 30 * time.Minute
-	stewardSeed   = "000000000000000000000000Steward1"
+	clientTimeout  = 30 * time.Minute
+	stewardSeed    = "000000000000000000000000Steward1"
+	configFileName = "faber-config.yaml"
 )
 
 var (
@@ -47,9 +48,6 @@ var (
 		strconv.Itoa(util.GetRandomInt(1, 99))
 	walletName = "faber." + version
 	imageUrl   = "https://identicon-api.herokuapp.com/" + walletName + "/300?format=png"
-
-	//go:embed faber-config.yaml
-	config []byte
 )
 
 func main() {
@@ -98,7 +96,7 @@ func initialization() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read config file
-	if err := util.LoadConfig(config); err != nil {
+	if err := util.LoadConfig(configFileName); err != nil {
 		log.Fatal().Err(err).Caller().Msgf("")
 	}
 	agentApiUrl = viper.GetString("agent-api-url")

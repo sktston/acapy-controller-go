@@ -7,7 +7,6 @@
 package util
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -23,20 +22,19 @@ import (
 	"time"
 )
 
-func LoadConfig(config []byte) (err error) {
-	viper.SetConfigType("yaml")
-
+func LoadConfig(configFileName string) (err error) {
 	replacer := strings.NewReplacer(".", "_")
 	viper.SetEnvKeyReplacer(replacer)
-
 	viper.AutomaticEnv()
 
-	err = viper.ReadConfig(bytes.NewBuffer(config))
+	viper.SetConfigFile(configFileName)
+	viper.AddConfigPath(".")
+	err = viper.ReadInConfig()
 	if err != nil {
 		return err
 	}
 
-	return
+	return nil
 }
 
 func PrettyJson(jsonString string) string {
