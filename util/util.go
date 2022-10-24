@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -98,44 +99,47 @@ func CheckHttpResult(resp *resty.Response, err error) error {
 	return nil
 }
 
-func DeleteAcapyData(agentApiUrl string, jwtToken string, walletId string, deleteDataList ...string) error {
+func DeleteAcapyData(agentApiUrl string, jwtToken string, walletId string, dataTypes ...string) error {
 	client := resty.New().SetBaseURL(agentApiUrl).SetAuthToken(jwtToken)
 
-	for _, deleteData := range deleteDataList {
-		if deleteData == "connection" {
+	for _, dataType := range dataTypes {
+		switch dataType {
+		case "connection":
 			log.Info().Msgf("Delete connections")
 			if err := deleteAllConnections(client); err != nil {
 				return err
 			}
-		}
 
-		if deleteData == "credential" {
+		case "credential":
 			log.Info().Msgf("Delete credentials")
 			if err := deleteAllCredentials(client); err != nil {
 				return err
 			}
-		}
 
-		if deleteData == "credential_exchange" {
+		case "credential_exchange":
 			log.Info().Msgf("Delete credential exchanges")
 			if err := deleteAllCredentialExchanges(client); err != nil {
 				return err
 			}
-		}
 
-		if deleteData == "presentation_exchange" {
+		case "presentation_exchange":
 			log.Info().Msgf("Delete presentation exchanges")
 			if err := deleteAllPresentationExchanges(client); err != nil {
 				return err
 			}
-		}
 
-		if deleteData == "wallet" && viper.GetBool("use-multitenancy") == true {
-			log.Info().Msgf("Delete wallet")
-			if err := deleteWallet(client.SetAuthToken(""), walletId); err != nil {
-				return err
+		case "wallet":
+			if viper.GetBool("use-multitenancy") == true {
+				log.Info().Msgf("Delete wallet")
+				if err := deleteWallet(client.SetAuthToken(""), walletId); err != nil {
+					return err
+				}
 			}
+			// Restore token
 			client.SetAuthToken(jwtToken)
+
+		default:
+			return errors.New(fmt.Sprintf(" delete acapy data type '%s' not supported", dataType))
 		}
 	}
 
