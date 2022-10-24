@@ -1,6 +1,6 @@
 # Controller of aries-cloudagent-python (Go version)
 ## Overview
-<img  src=https://user-images.githubusercontent.com/60603923/197467953-65bd232a-2eff-46df-9bec-d38403b38a5e.png width=100% alt="system introduction">
+<img  src=https://user-images.githubusercontent.com/60603923/197469273-ee69b934-02f6-4e32-8027-dca39fbb01ec.png width=70% alt="system introduction">
 
 - Implementation of [Hyperledger Aries Cloud Agent - Python(ACA-Py)](https://github.com/hyperledger/aries-cloudagent-python) compatible Controller.
 
