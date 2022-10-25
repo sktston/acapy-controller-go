@@ -37,19 +37,32 @@ func LoadConfig(configFileName string) (err error) {
 	return nil
 }
 
-func PrettyJson(jsonString string) string {
-	var unmarshalData interface{}
+func PrettyJson(v interface{}, indent ...string) string {
+	var marshalIndent string
 
-	err := json.Unmarshal([]byte(jsonString), &unmarshalData)
-	if err != nil {
-		log.Error().Err(err).Msg("")
+	TrimNewline := func(input string) interface{} {
+		jsonString := strings.ReplaceAll(input, "\n", "")
+		var stringUnmarshal interface{}
+		_ = json.Unmarshal([]byte(jsonString), &stringUnmarshal)
+		return stringUnmarshal
 	}
 
-	prettyJsonAsBytes, err := json.MarshalIndent(unmarshalData, "", "  ")
-	if err != nil {
-		log.Error().Err(err).Msg("")
+	switch v.(type) {
+	case []byte:
+		v = string(v.([]byte))
+		v = TrimNewline(v.(string))
+	case string:
+		v = TrimNewline(v.(string))
 	}
 
+	if len(indent) > 0 {
+		marshalIndent = indent[0]
+	} else {
+		marshalIndent = "  "
+	}
+
+	// Notice: no error handling for easy use
+	prettyJsonAsBytes, _ := json.MarshalIndent(v, "", marshalIndent)
 	return string(prettyJsonAsBytes)
 }
 
