@@ -160,15 +160,7 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 		return err
 	}
 
-	// catching ctx.Done() within timeout (5 seconds)
-	select {
-	case <-ctx.Done():
-		return errors.New("server shutdown failed within specified time")
-	default:
-	}
-
 	log.Info().Msgf("Http server shutdown successfully")
-
 	return nil
 }
 
