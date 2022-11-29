@@ -454,10 +454,17 @@ func sendPresentation(presExId string) error {
 	credentials := resp.String()
 
 	newReqAttrs := "{}"
+	newSelfAttrs := "{}"
 	reqAttrs := gjson.Get(presReq, "requested_attributes").Map()
 	for key := range reqAttrs {
 		credId, err := getMatchingCredentialId(credentials, key)
 		if err != nil {
+			if credId == "" {
+				if key == "attr_address" {
+					newSelfAttrs, _ = sjson.Set(newSelfAttrs, key, "self attested address value")
+					continue
+				}
+			}
 			log.Error().Err(err).Caller().Msgf("")
 			return err
 		}
@@ -479,7 +486,7 @@ func sendPresentation(presExId string) error {
 	body := `{
 		"requested_attributes": ` + newReqAttrs + `,
 		"requested_predicates": ` + newReqPreds + `,
-		"self_attested_attributes": {}
+		"self_attested_attributes": ` + newSelfAttrs + `
 	}`
 	log.Debug().Msgf("send presentation body: " + body)
 	resp, err = client.R().

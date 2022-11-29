@@ -666,6 +666,9 @@ func sendProofRequest(connectionId string) error {
 					"name": "photo",
 					"non_revoked": { "from": 0, "to": ` + curUnixTime + ` },
 					"restrictions": [ { "cred_def_id": "` + credDefId + `" } ]
+				},
+				"attr_address": {
+					"name": "address"
 				}
 			},
 			"requested_predicates": {
@@ -711,6 +714,113 @@ func revokeCredential(credExId string) error {
 	return nil
 }
 
+/*
+// body sample
+
+	{
+		"auto_present": false,
+		"auto_verify": true,
+		"connection_id": "514fbb03-1411-4d5f-ac5a-52b2cefa19ef",
+		"created_at": "2022-11-28T06:44:09.200750Z",
+		"initiator": "self",
+		"presentation": {
+			"identifiers": [{
+				"cred_def_id": "SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85",
+				"rev_reg_id": "SE7xaBWCDLN8AP54SKrUGX:4:SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85:CL_ACCUM:d7552474-fb3b-4f8b-a3f8-f0ac38a93c21",
+				"schema_id": "SE7xaBWCDLN8AP54SKrUGX:2:degree_schema:56.41.85",
+				"timestamp": 1669599616
+			}],
+			"requested_proof": {
+				"predicates": {},
+				"revealed_attrs": {
+					"attr_date": {
+						"encoded": "101085817956371643310471822530712840836446570298192279302750234554843339322886",
+						"raw": "05-2018",
+						"sub_proof_index": 0
+					},
+					"attr_degree": {
+						"encoded": "78137204873448776862705240258723141940757006710839733585634143215803847410018",
+						"raw": "maths",
+						"sub_proof_index": 0
+					},
+					"attr_name": {
+						"encoded": "19831138297880367962895005496563562590284654704047651305948751287370224856720",
+						"raw": "alice",
+						"sub_proof_index": 0
+					},
+					"attr_photo": {
+						"encoded": "100389533357464973037169638548740508934417014514044717361399600653322420053534",
+						"raw": "base64EncodedJpegImage",
+						"sub_proof_index": 0
+					}
+				},
+				"self_attested_attrs": {
+					"attr_address": "my self-attested value"
+				},
+				"unrevealed_attrs": {}
+			}
+		},
+		"presentation_exchange_id": "630df476-369e-4b89-9eaa-98ac0eea674f",
+		"presentation_request": {
+			"name": "proof_name",
+			"nonce": "633058518906354959770561",
+			"requested_attributes": {
+				"attr_address": {
+					"name": "address"
+				},
+				"attr_date": {
+					"name": "date",
+					"non_revoked": {
+						"from": 0,
+						"to": 1669617849
+					},
+					"restrictions": [{
+						"cred_def_id": "SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85"
+					}]
+				},
+				"attr_degree": {
+					"name": "degree",
+					"non_revoked": {
+						"from": 0,
+						"to": 1669617849
+					},
+					"restrictions": [{
+						"cred_def_id": "SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85"
+					}]
+				},
+				"attr_name": {
+					"name": "name",
+					"non_revoked": {
+						"from": 0,
+						"to": 1669617849
+					},
+					"restrictions": [{
+						"cred_def_id": "SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85"
+					}]
+				},
+				"attr_photo": {
+					"name": "photo",
+					"non_revoked": {
+						"from": 0,
+						"to": 1669617849
+					},
+					"restrictions": [{
+						"cred_def_id": "SE7xaBWCDLN8AP54SKrUGX:3:CL:854272560:tag.56.41.85"
+					}]
+				}
+			},
+			"requested_predicates": {},
+			"version": "1.0"
+		},
+		"role": "verifier",
+		"state": "verified",
+		"thread_id": "12c239a1-121a-4448-8ee9-e72a90f56bed",
+		"trace": false,
+		"updated_at": "2022-11-28T07:44:21.042791Z",
+		"verified": "true",
+		"verified_msgs": []
+	}
+*/
 func printProofResult(body map[string]interface{}) error {
 	if body["verified"] != "true" {
 		log.Warn().Msgf("proof is not verified")
@@ -721,12 +831,14 @@ func printProofResult(body map[string]interface{}) error {
 
 	presRequest := gjson.Get(string(bodyAsBytes), "presentation_request").String()
 
-	// add revealed value to presRequest
+	// add revealed value and self attested value to presRequest
 	requestedAttrs := gjson.Get(presRequest, "requested_attributes").Map()
-	for key := range requestedAttrs {
+	for key, _ := range requestedAttrs {
 		value := "unrevealed"
 		if gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key).Exists() {
 			value = gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key+".raw").String()
+		} else if gjson.Get(string(bodyAsBytes), "presentation.requested_proof.self_attested_attrs."+key).Exists() {
+			value = gjson.Get(string(bodyAsBytes), "presentation.requested_proof.self_attested_attrs."+key).String()
 		}
 		presRequest, _ = sjson.Set(presRequest, "requested_attributes."+key+".value", value)
 	}
