@@ -11,7 +11,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"github.com/gin-contrib/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog"
@@ -20,7 +19,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,7 +32,7 @@ import (
 )
 
 const (
-	clientTimeout  = 30 * time.Minute
+	clientTimeout  = 3 * time.Minute
 	stewardSeed    = "000000000000000000000000Steward1"
 	configFileName = "faber-config.yml"
 )
@@ -52,17 +51,19 @@ var (
 
 func main() {
 	// Initialization
-	initialization()
+	if err := initialization(); err != nil {
+		log.Fatal().Err(err).Caller().Msg("")
+	}
 
 	// Start web hook server
 	httpServer, err := startWebHookServer()
 	if err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 
 	// Start Faber
 	if err = provisionController(); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 
 	log.Info().Msgf("Waiting web hook event from agent...")
@@ -74,30 +75,31 @@ func main() {
 	<-ctrlC
 	log.Info().Msg("Ctrl-C detected, it may take a couple of seconds to clean up...")
 
-	// Delete acapy data
+	// Delete acapy agent data
 	if viper.GetBool("delete-data-at-exit") == true {
 		err = util.DeleteAgentData(agentApiUrl, jwtToken, walletId,
 			"connection", "credential_exchange", "presentation_exchange", "wallet")
 		if err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}
 
 	// Shut down web hook server
 	if err = shutdownWebHookServer(httpServer); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 
 	log.Info().Msgf("Faber exiting")
 }
 
-func initialization() {
+func initialization() error {
 	// Setting logger
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read config file
 	if err := util.LoadConfig(configFileName); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
+		return err
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
 
@@ -111,20 +113,21 @@ func initialization() {
 	default:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 		gin.SetMode(gin.ReleaseMode)
-		gin.DefaultWriter = ioutil.Discard
-		gin.DefaultErrorWriter = ioutil.Discard
+		gin.DefaultWriter = io.Discard
+		gin.DefaultErrorWriter = io.Discard
 	}
 
 	// Set client configuration
 	client.SetTimeout(clientTimeout)
 	client.SetHeader("Content-Type", "application/json")
+
+	return nil
 }
 
 func startWebHookServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(logger.SetLogger(logger.WithWriter(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})))
 
 	router.GET("/invitation-url", createInvitationUrl)
 	router.GET("/oob-invitation-url", createOobInvitationUrl)
@@ -142,10 +145,10 @@ func startWebHookServer() (*http.Server, error) {
 	}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}()
-	log.Info().Msgf("Listen on http://" + urlParse.Host)
+	log.Info().Msgf("Listen on http://%s", urlParse.Host)
 
 	return httpServer, nil
 }
@@ -156,7 +159,7 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
 
@@ -168,45 +171,45 @@ func provisionController() error {
 	if viper.GetBool("use-multitenancy") == true {
 		log.Info().Msgf("Obtain jwtToken of steward")
 		if err := obtainStewardJwtToken(); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
 
 		log.Info().Msgf("Create wallet")
 		if err := createWallet(); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
 
 		log.Info().Msgf("Create a new did and register the did as an issuer")
 		if err := createPublicDid(); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
 	}
 
 	log.Info().Msgf("Create schema and credential definition")
 	if err := createSchema(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
 	if err := createCredentialDefinition(); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
 
 	log.Info().Msgf("Configuration of faber:")
 	if viper.GetBool("use-multitenancy") == true {
-		log.Info().Msgf("- wallet name: " + walletName)
-		log.Info().Msgf("- wallet ID: " + walletId)
-		log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
-		log.Info().Msgf("- jwt token: " + jwtToken)
-		log.Info().Msgf("- did: " + did)
-		log.Info().Msgf("- verification key: " + verKey)
+		log.Info().Msgf("- wallet name: %s", walletName)
+		log.Info().Msgf("- wallet ID: %s", walletId)
+		log.Info().Msgf("- wallet type: %s", viper.GetString("wallet-type"))
+		log.Info().Msgf("- jwt token: %s", jwtToken)
+		log.Info().Msgf("- did: %s", did)
+		log.Info().Msgf("- verification key: %s", verKey)
 	}
-	log.Info().Msgf("- webhook url: " + viper.GetString("server-webhook-url"))
-	log.Info().Msgf("- schema ID: " + schemaId)
-	log.Info().Msgf("- credential definition ID: " + credDefId)
+	log.Info().Msgf("- webhook url: %s", viper.GetString("server-webhook-url"))
+	log.Info().Msgf("- schema ID: %s", schemaId)
+	log.Info().Msgf("- credential definition ID: %s", credDefId)
 
 	log.Info().Msgf("Initialization is done.")
 	log.Info().Msgf("Run alice now.")
@@ -232,7 +235,7 @@ func requestCreateInvitation(invitationType string) (*resty.Response, error) {
 			Post(agentApiUrl + "/connections/create-invitation" + params)
 	default:
 		err := errors.New("unexpected invitation type: " + invitationType)
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 		return nil, err
 	}
 }
@@ -251,49 +254,49 @@ func requestCreateOobInvitationWithProof(presExId string) (*resty.Response, erro
 
 func createInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation("connections")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
-	log.Info().Msgf("createInvitationUrl: " + invitationUrl)
+	log.Info().Msgf("createInvitationUrl: %s", invitationUrl)
 	c.String(http.StatusOK, invitationUrl)
 }
 
 func createOobInvitationUrl(c *gin.Context) {
 	resp, err := requestCreateInvitation("oob")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
-	log.Info().Msgf("createOobInvitationUrl: " + invitationUrl)
+	log.Info().Msgf("createOobInvitationUrl: %s", invitationUrl)
 	c.String(http.StatusOK, invitationUrl)
 }
 
 func createOobInvitationUrlProof(c *gin.Context) {
 	presExId, err := createProofRequest()
 	if err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	resp, err := requestCreateOobInvitationWithProof(presExId)
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
-	log.Info().Msgf("createInvitationUrl: " + invitationUrl)
+	log.Info().Msgf("createInvitationUrl: %s", invitationUrl)
 	c.String(http.StatusOK, invitationUrl)
 }
 
@@ -313,27 +316,25 @@ func handleEvent(c *gin.Context) {
 	}
 
 	bodyAsBytes, _ := json.Marshal(body)
-	log.Info().Msgf("handleEvent >>> topic:" + topic + ", state:" + state)
-	log.Debug().Msgf(", body:" + string(bodyAsBytes))
+	log.Info().Msgf("handleEvent >>> topic:%s, state:%s", topic, state)
+	log.Debug().Msgf(", body: %s", util.PrettyJson(bodyAsBytes))
 
 	switch topic {
 	case "issue_credential":
 		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendCredentialOffer()")
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendCredentialOffer()", topic, state)
 
 			if err := sendCredentialOffer(body["credential_exchange_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 		} else if state == "credential_acked" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> issue credential successfully")
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> issue credential successfully", topic, state)
 
 			if viper.GetBool("revoke-after-issue") {
 				log.Info().Msgf("- revoke-after-issue is true -> revokeCredential()")
 
 				if err := revokeCredential(body["credential_exchange_id"].(string)); err != nil {
-					log.Error().Err(err).Caller().Msgf("")
 					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}
@@ -342,18 +343,16 @@ func handleEvent(c *gin.Context) {
 
 	case "present_proof":
 		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> sendProofRequest()")
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendProofRequest()", topic, state)
 
 			if err := sendProofRequest(body["connection_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 		} else if state == "verified" {
-			log.Info().Msgf("- Case (topic:" + topic + ", state:" + state + ") -> printProofResult()")
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> printProofResult()", topic, state)
 
 			if err := printProofResult(body); err != nil {
-				log.Error().Err(err).Caller().Msgf("")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -367,7 +366,7 @@ func handleEvent(c *gin.Context) {
 	case "out_of_band":
 
 	default:
-		log.Warn().Msgf("- Warning Unexpected topic:" + topic)
+		log.Warn().Msgf("- Warning Unexpected topic:%s", topic)
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:" + topic})
 		return
 	}
@@ -380,11 +379,11 @@ func obtainStewardJwtToken() error {
 	resp, err := client.R().
 		SetQueryParam("wallet_name", stewardWallet).
 		Get(agentApiUrl + "/multitenancy/wallets")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	wallets := gjson.Get(resp.String(), "results").Array()
 	if len(wallets) == 0 {
@@ -394,51 +393,51 @@ func obtainStewardJwtToken() error {
 			"wallet_key": "` + stewardWallet + ".key" + `",
 			"wallet_type": "` + viper.GetString("wallet-type") + `"
 		}`
-		log.Info().Msgf("Not found steward wallet - Create a new steward wallet: " + util.PrettyJson(body))
+		log.Info().Msgf("Not found steward wallet - Create a new steward wallet: %s", util.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
 			Post(agentApiUrl + "/multitenancy/wallet")
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 
 		body = `{ "seed": "` + stewardSeed + `" }`
-		log.Info().Msgf("Create a steward did: " + util.PrettyJson(body))
+		log.Info().Msgf("Create a steward did: %s", util.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/create")
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 		stewardDid := gjson.Get(resp.String(), "result.did").String()
 
-		log.Info().Msgf("Assign the did to public:" + stewardDid)
+		log.Info().Msgf("Assign the did to public:%s", stewardDid)
 		resp, err = client.R().
 			SetQueryParam("did", stewardDid).
 			SetAuthToken(stewardJwtToken).
 			Post(agentApiUrl + "/wallet/did/public")
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	} else {
 		// stewardWallet exists -> get and return jwt token
 		stewardWalletId := gjson.Get(wallets[0].String(), "wallet_id").String()
-		log.Info().Msgf("Found steward wallet - Get jwt token with wallet id: " + stewardWalletId)
+		log.Info().Msgf("Found steward wallet - Get jwt token with wallet id: %s", stewardWalletId)
 		resp, err = client.R().
 			Post(agentApiUrl + "/multitenancy/wallet/" + stewardWalletId + "/token")
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 		stewardJwtToken = gjson.Get(resp.String(), "token").String()
 	}
 	return nil
@@ -453,15 +452,15 @@ func createWallet() error {
 		"image_url": "` + imageUrl + `",
 		"wallet_webhook_urls": ["` + viper.GetString("server-webhook-url") + `"]
 	}`
-	log.Info().Msgf("Create a new wallet: " + util.PrettyJson(body))
+	log.Info().Msgf("Create a new wallet: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
@@ -473,14 +472,14 @@ func createPublicDid() error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/create")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	did = gjson.Get(resp.String(), "result.did").String()
 	verKey = gjson.Get(resp.String(), "result.verkey").String()
-	log.Info().Msgf("created did: " + did + ", verkey: " + verKey)
+	log.Info().Msgf("created did: %s", did+", verkey: %s", verKey)
 
 	log.Info().Msgf("Register the did to the ledger as a ENDORSER by steward")
 	resp, err = client.R().
@@ -490,22 +489,22 @@ func createPublicDid() error {
 		SetQueryParam("role", "ENDORSER").
 		SetAuthToken(stewardJwtToken).
 		Post(agentApiUrl + "/ledger/register-nym")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
-	log.Info().Msgf("Assign the did to public: " + did)
+	log.Info().Msgf("Assign the did to public: %s", did)
 	resp, err = client.R().
 		SetQueryParam("did", did).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/wallet/did/public")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -516,16 +515,16 @@ func createSchema() error {
 		"schema_version": "` + version + `",
 		"attributes": ["name", "date", "degree", "age", "photo"]
 	}`
-	log.Info().Msgf("Create a new schema on the ledger: " + util.PrettyJson(body))
+	log.Info().Msgf("Create a new schema on the ledger: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/schemas")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	schemaId = gjson.Get(resp.String(), "schema_id").String()
 
 	return nil
@@ -538,16 +537,16 @@ func createCredentialDefinition() error {
 		"support_revocation": true,
 		"revocation_registry_size": 10
 	}`
-	log.Info().Msgf("Create a new credential definition on the ledger: " + util.PrettyJson(body))
+	log.Info().Msgf("Create a new credential definition on the ledger: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/credential-definitions")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	credDefId = gjson.Get(resp.String(), "credential_definition_id").String()
 
 	return nil
@@ -574,11 +573,11 @@ func sendCredentialOffer(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-offer")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -623,16 +622,16 @@ func createProofRequest() (string, error) {
 			}
 		}
 	}`
-	log.Debug().Msgf("body: " + body)
+	log.Debug().Msgf("body: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/create-request")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	presExId := gjson.Get(resp.String(), "presentation_exchange_id").String()
 
 	return presExId, nil
@@ -682,16 +681,16 @@ func sendProofRequest(connectionId string) error {
 			}
 		}
 	}`
-	log.Debug().Msgf("body: " + body)
+	log.Debug().Msgf("body: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-request")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -705,11 +704,11 @@ func revokeCredential(credExId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/revocation/revoke")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -833,7 +832,7 @@ func printProofResult(body map[string]interface{}) error {
 
 	// add revealed value and self attested value to presRequest
 	requestedAttrs := gjson.Get(presRequest, "requested_attributes").Map()
-	for key, _ := range requestedAttrs {
+	for key := range requestedAttrs {
 		value := "unrevealed"
 		if gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key).Exists() {
 			value = gjson.Get(string(bodyAsBytes), "presentation.requested_proof.revealed_attrs."+key+".raw").String()
@@ -843,7 +842,7 @@ func printProofResult(body map[string]interface{}) error {
 		presRequest, _ = sjson.Set(presRequest, "requested_attributes."+key+".value", value)
 	}
 
-	// print Attributes
+	// Print Attributes
 	requestedAttrs = gjson.Get(presRequest, "requested_attributes").Map()
 	log.Info().Msgf("Requested Attributes")
 	for key, val := range requestedAttrs {
@@ -853,7 +852,7 @@ func printProofResult(body map[string]interface{}) error {
 		log.Info().Msgf("- " + key + " - " + name + ": " + value)
 	}
 
-	// print Predicates
+	// Print Predicates
 	requestedPreds := gjson.Get(presRequest, "requested_predicates").Map()
 	log.Info().Msgf("Requested Predicates")
 	for key, val := range requestedPreds {

@@ -27,7 +27,7 @@ const (
 	pollingCyclePeriod = 1 * time.Second
 	pollingRetryMax    = 100
 
-	clientTimeout  = 30 * time.Minute
+	clientTimeout  = 3 * time.Minute
 	configFileName = "alice-config.yml"
 )
 
@@ -44,12 +44,14 @@ var (
 
 func main() {
 	// Initialization
-	initialization()
+	if err := initialization(); err != nil {
+		log.Fatal().Err(err).Caller().Msg("")
+	}
 
 	// (multitenancy) Create wallet
 	if viper.GetBool("use-multitenancy") == true {
 		if err := provisionController(); err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}
 
@@ -57,11 +59,11 @@ func main() {
 	log.Info().Msgf("Receive invitation to establish connection")
 	connectionId, err := receiveInvitation()
 	if err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
-	log.Info().Msgf("connection id: " + connectionId)
+	log.Info().Msgf("connection id: %s", connectionId)
 	if err = waitUntilConnectionState(connectionId, "active"); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 	log.Info().Msgf("connection established")
 
@@ -69,19 +71,19 @@ func main() {
 	log.Info().Msgf("Send credential proposal to receive credential offer")
 	credExId, err := sendCredentialProposal(connectionId)
 	if err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
-	log.Info().Msgf("credential exchange id: " + credExId)
+	log.Info().Msgf("credential exchange id: %s", credExId)
 	if err = waitUntilCredentialExchangeState(credExId, "offer_received"); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 
 	log.Info().Msgf("Send credential request to receive credential")
 	if err = sendCredentialRequest(credExId); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 	if err = waitUntilCredentialExchangeState(credExId, "credential_acked"); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 	log.Info().Msgf("credential received")
 
@@ -91,49 +93,50 @@ func main() {
 		// Note: invitation's requests~attach.data.json.@id = pres_ex_record's thread_id
 		connectionId, err = receiveInvitationWithProof()
 		if err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
-		log.Info().Msgf("connection id: " + connectionId)
+		log.Info().Msgf("connection id: %s", connectionId)
 		log.Info().Msgf("presentation sent") // final state is presentation_sent
 	} else {
 		// Send presentation
 		log.Info().Msgf("Send presentation proposal to receive presentation request")
 		if err = sendPresentationProposal(connectionId); err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 		presExId, err := waitUntilPresentationExchangeRequestReceived(connectionId)
 		if err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
-		log.Info().Msgf("presentation exchange id: " + credExId)
+		log.Info().Msgf("presentation exchange id: %s", credExId)
 
 		log.Info().Msgf("Send presentation")
 		if err = sendPresentation(presExId); err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 		if err = waitUntilPresentationExchangeState(presExId, "presentation_acked"); err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 		log.Info().Msgf("presentation acked") // final state is presentation_acked
 	}
 
-	// Delete acapy data
+	// Delete acapy agent data
 	if viper.GetBool("delete-data-at-exit") == true {
 		err = util.DeleteAgentData(agentApiUrl, jwtToken, walletId,
 			"connection", "credential", "credential_exchange", "presentation_exchange", "wallet")
 		if err != nil {
-			log.Fatal().Err(err).Caller().Msgf("")
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}
 }
 
-func initialization() {
+func initialization() error {
 	// Setting logger
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Read config file
 	if err := util.LoadConfig(configFileName); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Error().Err(err).Caller().Msg("")
+		return err
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
 
@@ -150,20 +153,22 @@ func initialization() {
 	// Set client configuration
 	client.SetTimeout(clientTimeout)
 	client.SetHeader("Content-Type", "application/json")
+
+	return nil
 }
 
 func provisionController() error {
 	log.Info().Msgf("Create wallet")
 	if err := createWallet(); err != nil {
-		log.Fatal().Err(err).Caller().Msgf("")
+		log.Fatal().Err(err).Caller().Msg("")
 		return err
 	}
 
 	log.Info().Msgf("Configuration of alice:")
-	log.Info().Msgf("- wallet name: " + walletName)
-	log.Info().Msgf("- wallet ID: " + walletId)
-	log.Info().Msgf("- wallet type: " + viper.GetString("wallet-type"))
-	log.Info().Msgf("- jwt token: " + jwtToken)
+	log.Info().Msgf("- wallet name: %s", walletName)
+	log.Info().Msgf("- wallet ID: %s", walletId)
+	log.Info().Msgf("- wallet type: %s", viper.GetString("wallet-type"))
+	log.Info().Msgf("- jwt token: %s", jwtToken)
 
 	return nil
 }
@@ -176,15 +181,15 @@ func createWallet() error {
 		"label": "` + walletName + ".label" + `",
 		"image_url": "` + imageUrl + `"
 	}`
-	log.Info().Msgf("Create a new wallet: " + util.PrettyJson(body))
+	log.Info().Msgf("Create a new wallet: %s", util.PrettyJson(body))
 	resp, err := client.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
@@ -193,15 +198,15 @@ func createWallet() error {
 		body = `{
 			"wallet_webhook_urls": ["` + webhookUrl + `"]
 		}`
-		log.Info().Msgf("Update the wallet: " + util.PrettyJson(body))
+		log.Info().Msgf("Update the wallet: %s", util.PrettyJson(body))
 		resp, err = client.R().
 			SetBody(body).
 			Put(agentApiUrl + "/multitenancy/wallet/" + walletId)
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	}
 
 	return nil
@@ -210,14 +215,18 @@ func createWallet() error {
 func receiveInvitation() (string, error) {
 	resp, err := client.R().
 		Get(viper.GetString("issuer-invitation-url"))
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	invitation, err := util.ParseInvitationUrl(resp.String())
-	log.Info().Msgf("invitation: " + string(invitation))
+	if err != nil {
+		log.Error().Err(err).Caller().Msg("")
+		return "", err
+	}
+	log.Info().Msgf("invitation: %s", invitation)
 
 	invitationType := gjson.Get(invitation, `@type`).String()
 	switch invitationType {
@@ -235,11 +244,11 @@ func receiveInvitation() (string, error) {
 		err = errors.New("unexpected invitation type" + invitationType)
 		return "", err
 	}
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	connectionId := gjson.Get(resp.String(), `connection_id`).String()
 
 	return connectionId, nil
@@ -248,14 +257,18 @@ func receiveInvitation() (string, error) {
 func receiveInvitationWithProof() (string, error) {
 	resp, err := client.R().
 		Get(viper.GetString("issuer-invitation-url-with-proof"))
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	invitation, err := util.ParseInvitationUrl(resp.String())
-	log.Info().Msgf("invitation: " + string(invitation))
+	if err != nil {
+		log.Error().Err(err).Caller().Msg("")
+		return "", err
+	}
+	log.Info().Msgf("invitation: %s", string(invitation))
 
 	invitationType := gjson.Get(invitation, `@type`).String()
 	switch invitationType {
@@ -269,40 +282,40 @@ func receiveInvitationWithProof() (string, error) {
 		return "", err
 	}
 
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	connectionId := gjson.Get(resp.String(), `connection_id`).String()
 
 	return connectionId, nil
 }
 
 func waitUntilConnectionState(connectionId string, state string) error {
-	log.Info().Msgf("Wait until connection (state: " + state + ")")
+	log.Info().Msgf("Wait until connection (state: %s", state+")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/connections/" + connectionId)
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 		resState := gjson.Get(resp.String(), `state`).String()
-		log.Info().Msgf("connection state: " + resState)
+		log.Info().Msgf("connection state: %s", resState)
 		if resState == state {
 			return nil
 		} else if resState == "" {
 			errorMsg := gjson.Get(resp.String(), "error_msg").String()
-			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			log.Info().Msgf("received problem report error_msg: %s", errorMsg)
 			return errors.New(errorMsg)
 		}
 		time.Sleep(pollingCyclePeriod)
 	}
 	err := errors.New("timeout - connection is not (state: " + state + ")")
-	log.Error().Err(err).Caller().Msgf("")
+	log.Error().Err(err).Caller().Msg("")
 	return err
 }
 
@@ -314,41 +327,41 @@ func sendCredentialProposal(connectionId string) (string, error) {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/send-proposal")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return "", err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	credExId := gjson.Get(resp.String(), "credential_exchange_id").String()
 
 	return credExId, nil
 }
 
 func waitUntilCredentialExchangeState(credExId string, state string) error {
-	log.Info().Msgf("Wait until credential exchange (state: " + state + ")")
+	log.Info().Msgf("Wait until credential exchange (state: %s", state+")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/issue-credential/records/" + credExId)
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 		resState := gjson.Get(resp.String(), "state").String()
-		log.Info().Msgf("credential exchange state: " + resState)
+		log.Info().Msgf("credential exchange state: %s", resState)
 		if resState == state {
 			return nil
 		} else if resState == "" {
 			errorMsg := gjson.Get(resp.String(), "error_msg").String()
-			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			log.Info().Msgf("received problem report error_msg: %s", errorMsg)
 			return errors.New(errorMsg)
 		}
 		time.Sleep(pollingCyclePeriod)
 	}
 	err := errors.New("timeout - credential exchange is not (state: " + state + ")")
-	log.Error().Err(err).Caller().Msgf("")
+	log.Error().Err(err).Caller().Msg("")
 	return err
 }
 
@@ -356,11 +369,11 @@ func sendCredentialRequest(credExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-request")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -377,11 +390,11 @@ func sendPresentationProposal(connectionId string) error {
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-proposal")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
@@ -394,20 +407,20 @@ func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, 
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/present-proof/records" + params)
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return "", err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 		presExes := gjson.Get(resp.String(), "results").Array()
-		log.Info().Msgf("the number of presentation exchange (state: request_received): " + strconv.Itoa(len(presExes)))
+		log.Info().Msgf("the number of presentation exchange (state: request_received): %s", strconv.Itoa(len(presExes)))
 		if len(presExes) > 0 {
 			return gjson.Get(presExes[0].String(), "presentation_exchange_id").String(), nil
 		}
 	}
 	err := errors.New("timeout - presentation exchange is not (state: request_received)")
-	log.Error().Err(err).Caller().Msgf("")
+	log.Error().Err(err).Caller().Msg("")
 	return "", err
 }
 
@@ -436,21 +449,21 @@ func sendPresentation(presExId string) error {
 	resp, err := client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId)
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	presReq := gjson.Get(resp.String(), "presentation_request").String()
 
 	resp, err = client.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId + "/credentials")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	credentials := resp.String()
 
 	newReqAttrs := "{}"
@@ -465,7 +478,7 @@ func sendPresentation(presExId string) error {
 					continue
 				}
 			}
-			log.Error().Err(err).Caller().Msgf("")
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
 		newReqAttrs, _ = sjson.Set(newReqAttrs, key+".cred_id", credId)
@@ -477,7 +490,7 @@ func sendPresentation(presExId string) error {
 	for key := range reqPreds {
 		credId, err := getMatchingCredentialId(credentials, key)
 		if err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
 		newReqPreds, _ = sjson.Set(newReqPreds, key+".cred_id", credId)
@@ -488,43 +501,43 @@ func sendPresentation(presExId string) error {
 		"requested_predicates": ` + newReqPreds + `,
 		"self_attested_attributes": ` + newSelfAttrs + `
 	}`
-	log.Debug().Msgf("send presentation body: " + body)
+	log.Debug().Msgf("send presentation body: %s", body)
 	resp, err = client.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/records/" + presExId + "/send-presentation")
-	if err := util.CheckHttpResult(resp, err); err != nil {
-		log.Error().Err(err).Caller().Msgf("")
+	if err = util.CheckHttpResult(resp, err); err != nil {
+		log.Error().Err(err).Caller().Msg("")
 		return err
 	}
-	log.Debug().Msgf("response: " + resp.String())
+	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 
 	return nil
 }
 
 func waitUntilPresentationExchangeState(presExId string, state string) error {
-	log.Info().Msgf("Wait until presentation exchange (state: " + state + ")")
+	log.Info().Msgf("Wait until presentation exchange (state: %s", state+")")
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		time.Sleep(pollingCyclePeriod)
 		resp, err := client.R().
 			SetAuthToken(jwtToken).
 			Get(agentApiUrl + "/present-proof/records/" + presExId)
-		if err := util.CheckHttpResult(resp, err); err != nil {
-			log.Error().Err(err).Caller().Msgf("")
+		if err = util.CheckHttpResult(resp, err); err != nil {
+			log.Error().Err(err).Caller().Msg("")
 			return err
 		}
-		log.Debug().Msgf("response: " + resp.String())
+		log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 		resState := gjson.Get(resp.String(), `state`).String()
-		log.Info().Msgf("presentation exchange state: " + resState)
+		log.Info().Msgf("presentation exchange state: %s", resState)
 		if resState == state {
 			return nil
 		} else if resState == "" {
 			errorMsg := gjson.Get(resp.String(), "error_msg").String()
-			log.Info().Msgf("received problem report error_msg: " + errorMsg)
+			log.Info().Msgf("received problem report error_msg: %s", errorMsg)
 			return errors.New(errorMsg)
 		}
 	}
 	err := errors.New("timeout - presentation exchange is not (state: " + state + ")")
-	log.Error().Err(err).Caller().Msgf("")
+	log.Error().Err(err).Caller().Msg("")
 	return err
 }
