@@ -13,6 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/viper"
 	"math/rand"
+	"path"
 	"strings"
 	"time"
 )
@@ -85,4 +86,16 @@ func CheckHttpResult(response *resty.Response, err error) error {
 
 func IsStringEmpty(str string) bool {
 	return len(strings.TrimSpace(str)) == 0
+}
+
+func JoinURL(base string, paths ...string) string {
+	p := path.Join(paths...)
+	return fmt.Sprintf("%s/%s", strings.TrimRight(base, "/"), strings.TrimLeft(p, "/"))
+}
+
+func If[T any](condition bool, trueValue, falseValue T) T {
+	if condition {
+		return trueValue
+	}
+	return falseValue
 }

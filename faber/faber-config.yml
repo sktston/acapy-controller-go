@@ -6,3 +6,7 @@ public-invitation: true
 revoke-after-issue: false
 use-multitenancy: true
 delete-data-at-exit: true
+
+server-sent-event:
+  enable: true
+  datastore-url: http://localhost:8080

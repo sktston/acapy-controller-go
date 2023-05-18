@@ -32,8 +32,8 @@ const (
 )
 
 var (
-	client                          = resty.New()
-	agentApiUrl, jwtToken, walletId string
+	httpClient                                       = resty.New()
+	agentApiUrl, datastoreApiUrl, jwtToken, walletId string
 
 	version = strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Establish Connection
-	log.Info().Msgf("Receive invitation to establish connection")
+	log.Info().Msg("Receive invitation to establish connection")
 	connectionId, err := receiveInvitation()
 	if err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
@@ -65,10 +65,10 @@ func main() {
 	if err = waitUntilConnectionState(connectionId, "active"); err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
-	log.Info().Msgf("connection established")
+	log.Info().Msg("connection established")
 
 	// Receive Credential
-	log.Info().Msgf("Send credential proposal to receive credential offer")
+	log.Info().Msg("Send credential proposal to receive credential offer")
 	credExId, err := sendCredentialProposal(connectionId)
 	if err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
@@ -78,14 +78,14 @@ func main() {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 
-	log.Info().Msgf("Send credential request to receive credential")
+	log.Info().Msg("Send credential request to receive credential")
 	if err = sendCredentialRequest(credExId); err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 	if err = waitUntilCredentialExchangeState(credExId, "credential_acked"); err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
-	log.Info().Msgf("credential received")
+	log.Info().Msg("credential received")
 
 	if viper.GetBool("enable-invitation-with-proof") {
 		// Send presentation via invitation
@@ -96,10 +96,10 @@ func main() {
 			log.Fatal().Err(err).Caller().Msg("")
 		}
 		log.Info().Msgf("connection id: %s", connectionId)
-		log.Info().Msgf("presentation sent") // final state is presentation_sent
+		log.Info().Msg("presentation sent") // final state is presentation_sent
 	} else {
 		// Send presentation
-		log.Info().Msgf("Send presentation proposal to receive presentation request")
+		log.Info().Msg("Send presentation proposal to receive presentation request")
 		if err = sendPresentationProposal(connectionId); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
 		}
@@ -109,7 +109,7 @@ func main() {
 		}
 		log.Info().Msgf("presentation exchange id: %s", credExId)
 
-		log.Info().Msgf("Send presentation")
+		log.Info().Msg("Send presentation")
 		if err = sendPresentation(presExId); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
 		}
@@ -139,6 +139,7 @@ func initialization() error {
 		return err
 	}
 	agentApiUrl = viper.GetString("agent-api-url")
+	datastoreApiUrl = viper.GetString("datastore.api-url")
 
 	// Set log level for zerolog and gin
 	switch strings.ToUpper(viper.GetString("log-level")) {
@@ -150,9 +151,9 @@ func initialization() error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Set client configuration
-	client.SetTimeout(clientTimeout)
-	client.SetHeader("Content-Type", "application/json")
+	// Set httpClient configuration
+	httpClient.SetTimeout(clientTimeout)
+	httpClient.SetHeader("Content-Type", "application/json")
 
 	return nil
 }
@@ -169,6 +170,9 @@ func provisionController() error {
 	log.Info().Msgf("- wallet ID: %s", walletId)
 	log.Info().Msgf("- wallet type: %s", viper.GetString("wallet-type"))
 	log.Info().Msgf("- jwt token: %s", jwtToken)
+	if viper.GetBool("datastore.enable") {
+		log.Info().Msgf("- webhook url: %s", util.JoinURL(viper.GetString("datastore.webhook-url"), walletId))
+	}
 
 	return nil
 }
@@ -182,7 +186,7 @@ func createWallet() error {
 		"image_url": "` + imageUrl + `"
 	}`
 	log.Info().Msgf("Create a new wallet: %s", util.PrettyJson(body))
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		SetBody(body).
 		Post(agentApiUrl + "/multitenancy/wallet")
 	if err = util.CheckHttpResult(resp, err); err != nil {
@@ -193,13 +197,13 @@ func createWallet() error {
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
-	if viper.GetBool("enable-webhook") {
-		webhookUrl := "http://localhost:8080/webhooks/" + walletId
+	if viper.GetBool("datastore.enable") {
+		webhookUrl := util.JoinURL(viper.GetString("datastore.webhook-url"), walletId)
 		body = `{
 			"wallet_webhook_urls": ["` + webhookUrl + `"]
 		}`
 		log.Info().Msgf("Update the wallet: %s", util.PrettyJson(body))
-		resp, err = client.R().
+		resp, err = httpClient.R().
 			SetBody(body).
 			Put(agentApiUrl + "/multitenancy/wallet/" + walletId)
 		if err = util.CheckHttpResult(resp, err); err != nil {
@@ -213,7 +217,7 @@ func createWallet() error {
 }
 
 func receiveInvitation() (string, error) {
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		Get(viper.GetString("issuer-invitation-url"))
 	if err = util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msg("")
@@ -231,12 +235,12 @@ func receiveInvitation() (string, error) {
 	invitationType := gjson.Get(invitation, `@type`).String()
 	switch invitationType {
 	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation":
-		resp, err = client.R().
+		resp, err = httpClient.R().
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/out-of-band/receive-invitation")
 	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/connections/1.0/invitation":
-		resp, err = client.R().
+		resp, err = httpClient.R().
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/connections/receive-invitation")
@@ -255,7 +259,7 @@ func receiveInvitation() (string, error) {
 }
 
 func receiveInvitationWithProof() (string, error) {
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		Get(viper.GetString("issuer-invitation-url-with-proof"))
 	if err = util.CheckHttpResult(resp, err); err != nil {
 		log.Error().Err(err).Caller().Msg("")
@@ -273,7 +277,7 @@ func receiveInvitationWithProof() (string, error) {
 	invitationType := gjson.Get(invitation, `@type`).String()
 	switch invitationType {
 	case "did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/out-of-band/1.0/invitation":
-		resp, err = client.R().
+		resp, err = httpClient.R().
 			SetBody(invitation).
 			SetAuthToken(jwtToken).
 			Post(agentApiUrl + "/out-of-band/receive-invitation")
@@ -294,10 +298,11 @@ func receiveInvitationWithProof() (string, error) {
 
 func waitUntilConnectionState(connectionId string, state string) error {
 	log.Info().Msgf("Wait until connection (state: %s", state+")")
+	apiUrl := util.If(viper.GetBool("datastore.enable"), datastoreApiUrl, agentApiUrl)
 	for retry := 0; retry < pollingRetryMax; retry++ {
-		resp, err := client.R().
+		resp, err := httpClient.R().
 			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/connections/" + connectionId)
+			Get(apiUrl + "/connections/" + connectionId)
 		if err = util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msg("")
 			return err
@@ -323,7 +328,7 @@ func sendCredentialProposal(connectionId string) (string, error) {
 	body := `{
 		"connection_id": "` + connectionId + `"
 	}`
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/send-proposal")
@@ -339,10 +344,11 @@ func sendCredentialProposal(connectionId string) (string, error) {
 
 func waitUntilCredentialExchangeState(credExId string, state string) error {
 	log.Info().Msgf("Wait until credential exchange (state: %s", state+")")
+	apiUrl := util.If(viper.GetBool("datastore.enable"), datastoreApiUrl, agentApiUrl)
 	for retry := 0; retry < pollingRetryMax; retry++ {
-		resp, err := client.R().
+		resp, err := httpClient.R().
 			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/issue-credential/records/" + credExId)
+			Get(apiUrl + "/issue-credential/records/" + credExId)
 		if err = util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msg("")
 			return err
@@ -366,7 +372,7 @@ func waitUntilCredentialExchangeState(credExId string, state string) error {
 }
 
 func sendCredentialRequest(credExId string) error {
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/issue-credential/records/" + credExId + "/send-request")
 	if err = util.CheckHttpResult(resp, err); err != nil {
@@ -386,7 +392,7 @@ func sendPresentationProposal(connectionId string) error {
 			"predicates": []
 		}
 	}`
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/send-proposal")
@@ -401,12 +407,13 @@ func sendPresentationProposal(connectionId string) error {
 
 func waitUntilPresentationExchangeRequestReceived(connectionId string) (string, error) {
 	log.Info().Msgf("Wait until presentation exchange (state: request_received)")
+	apiUrl := util.If(viper.GetBool("datastore.enable"), datastoreApiUrl, agentApiUrl)
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		time.Sleep(pollingCyclePeriod)
 		params := "?state=request_received&connection_id=" + connectionId
-		resp, err := client.R().
+		resp, err := httpClient.R().
 			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/present-proof/records" + params)
+			Get(apiUrl + "/present-proof/records" + params)
 		if err = util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msg("")
 			return "", err
@@ -446,7 +453,7 @@ func getMatchingCredentialId(credentials string, mAttr string) (string, error) {
 }
 
 func sendPresentation(presExId string) error {
-	resp, err := client.R().
+	resp, err := httpClient.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId)
 	if err = util.CheckHttpResult(resp, err); err != nil {
@@ -456,7 +463,7 @@ func sendPresentation(presExId string) error {
 	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	presReq := gjson.Get(resp.String(), "presentation_request").String()
 
-	resp, err = client.R().
+	resp, err = httpClient.R().
 		SetAuthToken(jwtToken).
 		Get(agentApiUrl + "/present-proof/records/" + presExId + "/credentials")
 	if err = util.CheckHttpResult(resp, err); err != nil {
@@ -502,7 +509,7 @@ func sendPresentation(presExId string) error {
 		"self_attested_attributes": ` + newSelfAttrs + `
 	}`
 	log.Debug().Msgf("send presentation body: %s", body)
-	resp, err = client.R().
+	resp, err = httpClient.R().
 		SetBody(body).
 		SetAuthToken(jwtToken).
 		Post(agentApiUrl + "/present-proof/records/" + presExId + "/send-presentation")
@@ -517,11 +524,12 @@ func sendPresentation(presExId string) error {
 
 func waitUntilPresentationExchangeState(presExId string, state string) error {
 	log.Info().Msgf("Wait until presentation exchange (state: %s", state+")")
+	apiUrl := util.If(viper.GetBool("datastore.enable"), datastoreApiUrl, agentApiUrl)
 	for retry := 0; retry < pollingRetryMax; retry++ {
 		time.Sleep(pollingCyclePeriod)
-		resp, err := client.R().
+		resp, err := httpClient.R().
 			SetAuthToken(jwtToken).
-			Get(agentApiUrl + "/present-proof/records/" + presExId)
+			Get(apiUrl + "/present-proof/records/" + presExId)
 		if err = util.CheckHttpResult(resp, err); err != nil {
 			log.Error().Err(err).Caller().Msg("")
 			return err

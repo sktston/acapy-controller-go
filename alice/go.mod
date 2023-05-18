@@ -1,6 +1,6 @@
 module github.com/sktston/acapy-controller-go/alice
 
-go 1.18
+go 1.19
 
 replace github.com/sktston/acapy-controller-go/util => ../util
 
@@ -8,7 +8,7 @@ require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/go-resty/resty/v2 v2.7.0
 	github.com/rs/zerolog v1.29.1
-	github.com/sktston/acapy-controller-go/util v0.0.0-20221129022313-928d1474e532
+	github.com/sktston/acapy-controller-go/util v0.0.0-20230517103115-60e0bacee153
 	github.com/spf13/viper v1.15.0
 	github.com/tidwall/gjson v1.14.4
 	github.com/tidwall/sjson v1.2.5
