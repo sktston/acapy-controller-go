@@ -97,7 +97,7 @@ func main() {
 		}
 	}
 
-	// Shut down SSE client
+	// Shut down sse client
 	if viper.GetBool("server-sent-event.enable") {
 		if err = shutdownSseClient(); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
@@ -218,7 +218,7 @@ func startSseClient() error {
 func shutdownSseClient() error {
 	var err error
 
-	// Cancel SSE context
+	// Cancel sse context
 	sseCancel()
 
 	select {
