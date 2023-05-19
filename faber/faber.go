@@ -44,6 +44,9 @@ var (
 	did, verKey, schemaId, credDefId, walletId         string
 	agentApiUrl, stewardJwtToken, jwtToken, webhookUrl string
 
+	sseCtx    context.Context
+	sseCancel context.CancelFunc
+
 	version = strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(util.GetRandomInt(1, 99)) + "." +
 		strconv.Itoa(util.GetRandomInt(1, 99))
@@ -90,6 +93,13 @@ func main() {
 		err = util.DeleteAgentData(agentApiUrl, jwtToken, walletId,
 			"connection", "credential_exchange", "presentation_exchange", "wallet")
 		if err != nil {
+			log.Fatal().Err(err).Caller().Msg("")
+		}
+	}
+
+	// Shut down SSE client
+	if viper.GetBool("server-sent-event.enable") {
+		if err = shutdownSseClient(); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}
@@ -178,21 +188,50 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 }
 
 func startSseClient() error {
-	sseServerUrl := util.JoinURL(viper.GetString("server-sent-event.datastore-url"), "/sse-events")
+	sseServerUrl := util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/sse-events")
 	log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
+	// Set sse client configurations
 	sseClient = sse.NewClient(sseServerUrl)
 	sseClient.Headers = map[string]string{
 		"Authorization": "Bearer " + jwtToken,
 	}
+	sseClient.OnConnect(func(c *sse.Client) {
+		log.Info().Msgf("SSE client connected: '%s'", util.JoinURL(c.URL, walletId))
+	})
+	sseClient.OnDisconnect(func(c *sse.Client) {
+		log.Error().Msgf("SSE client disconnected abnormally: '%s'", util.JoinURL(c.URL, walletId))
+	})
 
 	go func() {
-		if err := sseClient.Subscribe(walletId, handleSseEvent); err != nil {
-			log.Error().Err(err).Caller().Msg("")
+		sseCtx, sseCancel = context.WithCancel(context.Background())
+
+		// Start sse client and connect to walletId stream
+		if err := sseClient.SubscribeWithContext(sseCtx, walletId, handleSseEvent); err != nil {
+			log.Fatal().Err(err).Caller().Msg("")
 		}
 	}()
 
 	return nil
+}
+
+func shutdownSseClient() error {
+	var err error
+
+	// Cancel SSE context
+	sseCancel()
+
+	select {
+	case <-sseCtx.Done(): // SSE context cancel success
+		err = nil
+		log.Info().Msgf("SSE client shutdown successfully")
+
+	case <-time.After(1 * time.Second): // Timeout
+		err = errors.New("sse context cancel timeout")
+		log.Error().Err(err).Caller().Msg("")
+	}
+
+	return err
 }
 
 func provisionController() error {
@@ -566,7 +605,7 @@ func createWallet() error {
 	jwtToken = gjson.Get(resp.String(), "token").String()
 
 	if viper.GetBool("server-sent-event.enable") {
-		webhookUrl = util.JoinURL(viper.GetString("server-sent-event.datastore-url"), "/webhooks", walletId)
+		webhookUrl = util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/webhooks", walletId)
 	} else {
 		webhookUrl = util.JoinURL(viper.GetString("server-webhook-url"), walletId)
 	}

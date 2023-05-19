@@ -1,7 +1,7 @@
 server-webhook-url: http://localhost:8040/webhooks
 agent-api-url: http://localhost:8021
-log-level: debug    # info, debug
-wallet-type: askar  # askar, indy
+log-level: debug    # example: info, debug
+wallet-type: askar  # example: askar, indy
 public-invitation: true
 revoke-after-issue: false
 use-multitenancy: true
@@ -9,4 +9,4 @@ delete-data-at-exit: true
 
 server-sent-event:
   enable: true
-  datastore-url: http://localhost:8080
+  sse-server-url: http://localhost:8080 # in our case, usually the datastore URL

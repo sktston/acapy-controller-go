@@ -1,7 +1,7 @@
 issuer-invitation-url: http://localhost:8040/invitation-url  # invitation-url oob-invitation-url
 agent-api-url: http://localhost:8021
-log-level: debug     # info, debug
-wallet-type: askar   # askar, indy
+log-level: debug     # example: info, debug
+wallet-type: askar   # example: askar, indy
 use-multitenancy: true
 delete-data-at-exit: true
 
