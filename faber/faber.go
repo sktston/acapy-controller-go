@@ -189,6 +189,7 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 
 func startSseClient() error {
 	sseServerUrl := util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/sse-events")
+	sseServerUrl += "?ip=" + util.GetOutboundIP().String()
 	log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
 	// Set sse client configurations
@@ -197,16 +198,19 @@ func startSseClient() error {
 		"Authorization": "Bearer " + jwtToken,
 	}
 	sseClient.OnConnect(func(c *sse.Client) {
-		log.Info().Msgf("SSE client connected: '%s'", util.JoinURL(c.URL, walletId))
+		log.Info().Msgf("SSE client connected: '%s'", c.URL)
 	})
 	sseClient.OnDisconnect(func(c *sse.Client) {
-		log.Error().Msgf("SSE client disconnected abnormally: '%s'", util.JoinURL(c.URL, walletId))
+		// SseServer.Close() 없이 webserver 강제로 shutdown하는 경우 발생
+		log.Error().Msgf("SSE client disconnected abnormally: '%s'", c.URL)
 	})
 
 	go func() {
 		sseCtx, sseCancel = context.WithCancel(context.Background())
 
 		// Start sse client and connect to walletId stream
+		// walletId로 지정된 stream으로 event 수신, handleSseEvent()는 event 도착 순서에 따라 해당 event를 인자로 해서 순차 수행
+		// 주의: http 핸들러와는 달리 handleSseEvent()는 병렬 수행되지 않음. 한 event에 대해 모두 수행 후 다음 event에 대해 수행
 		if err := sseClient.SubscribeWithContext(sseCtx, walletId, handleSseEvent); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
 		}

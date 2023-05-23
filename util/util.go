@@ -13,6 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/viper"
 	"math/rand"
+	"net"
 	"path"
 	"strings"
 	"time"
@@ -98,4 +99,13 @@ func If[T any](condition bool, trueValue, falseValue T) T {
 		return trueValue
 	}
 	return falseValue
+}
+
+func GetOutboundIP() net.IP {
+	conn, _ := net.Dial("udp", "8.8.8.8:80")
+	defer func() { _ = conn.Close() }()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
