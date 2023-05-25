@@ -75,11 +75,7 @@ func main() {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 
-	if viper.GetBool("server-sent-event.enable") {
-		log.Info().Msgf("Waiting server sent event from data store...")
-	} else {
-		log.Info().Msgf("Waiting web hook event from agent...")
-	}
+	log.Info().Msgf("Waiting server sent event from data store...")
 
 	// Exit by pressing Ctrl-C or 'kill pid' in the shell
 	ctrlC := make(chan os.Signal, 1)
@@ -98,10 +94,8 @@ func main() {
 	}
 
 	// Shut down sse client
-	if viper.GetBool("server-sent-event.enable") {
-		if err = shutdownSseClient(); err != nil {
-			log.Fatal().Err(err).Caller().Msg("")
-		}
+	if err = shutdownSseClient(); err != nil {
+		log.Fatal().Err(err).Caller().Msg("")
 	}
 
 	// Shut down web hook server
@@ -261,11 +255,9 @@ func provisionController() error {
 	}
 
 	// SSE client starts using wallet ID
-	if viper.GetBool("server-sent-event.enable") {
-		if err := startSseClient(); err != nil {
-			log.Error().Err(err).Caller().Msg("")
-			return err
-		}
+	if err := startSseClient(); err != nil {
+		log.Error().Err(err).Caller().Msg("")
+		return err
 	}
 
 	log.Info().Msgf("Create schema and credential definition")
@@ -533,12 +525,7 @@ func createWallet() error {
 	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
-
-	if viper.GetBool("server-sent-event.enable") {
-		webhookUrl = util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/webhooks", walletId)
-	} else {
-		webhookUrl = util.JoinURL(viper.GetString("server-webhook-url"), walletId)
-	}
+	webhookUrl = util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/webhooks", walletId)
 
 	body = `{
 			"wallet_webhook_urls": ["` + webhookUrl + `"]

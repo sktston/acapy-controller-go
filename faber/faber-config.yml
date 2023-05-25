@@ -8,5 +8,4 @@ use-multitenancy: true
 delete-data-at-exit: true
 
 server-sent-event:
-  enable: true
   sse-server-url: http://localhost:8080 # in our case, usually the datastore URL
