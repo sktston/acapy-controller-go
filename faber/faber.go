@@ -152,7 +152,6 @@ func startWebHookServer() (*http.Server, error) {
 	router.GET("/invitation-url", createInvitationUrl)
 	router.GET("/oob-invitation-url", createOobInvitationUrl)
 	router.GET("/oob-invitation-url-with-proof", createOobInvitationUrlProof)
-	router.POST("/webhooks/:walletId/topic/:topic", handleWebhookEvent)
 
 	// Get port from HolderWebhookUrl
 	urlParse, _ := url.Parse(viper.GetString("server-webhook-url"))
@@ -189,7 +188,8 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 
 func startSseClient() error {
 	sseServerUrl := util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/sse-events")
-	sseServerUrl += "?ip=" + util.GetOutboundIP().String()
+	sseServerUrl += "?client_ip=" + util.GetOutboundIP().String()
+	sseServerUrl += "&client_id=faber"
 	log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
 	// Set sse client configurations
@@ -378,80 +378,6 @@ func createOobInvitationUrlProof(c *gin.Context) {
 	invitationUrl := gjson.Get(resp.String(), "invitation_url").String()
 	log.Info().Msgf("createInvitationUrl: %s", invitationUrl)
 	c.String(http.StatusOK, invitationUrl)
-}
-
-func handleWebhookEvent(c *gin.Context) {
-	// walletId := c.Param("walletId")
-	topic := c.Param("topic")
-
-	var body map[string]interface{}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		log.Error().Err(err).Caller().Msgf("invalid JSON")
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
-		return
-	}
-
-	var state string
-	if val, ok := body["state"]; ok {
-		state = val.(string)
-	}
-
-	bodyAsBytes, _ := json.Marshal(body)
-	log.Info().Msgf("handleWebhookEvent >>> topic:%s, state:%s", topic, state)
-	log.Debug().Msgf("body: %s", util.PrettyJson(bodyAsBytes))
-
-	switch topic {
-	case "issue_credential":
-		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendCredentialOffer()", topic, state)
-
-			if err := sendCredentialOffer(body["credential_exchange_id"].(string)); err != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else if state == "credential_acked" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> issue credential successfully", topic, state)
-
-			if viper.GetBool("revoke-after-issue") {
-				log.Info().Msgf("- revoke-after-issue is true -> revokeCredential()")
-
-				if err := revokeCredential(body["credential_exchange_id"].(string)); err != nil {
-					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-			}
-		}
-
-	case "present_proof":
-		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendProofRequest()", topic, state)
-
-			if err := sendProofRequest(body["connection_id"].(string)); err != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else if state == "verified" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> printProofResult()", topic, state)
-
-			if err := printProofResult(body); err != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		}
-
-	case "connections":
-	case "basicmessages":
-	case "revocation_registry":
-	case "problem_report":
-	case "issuer_cred_rev":
-	case "out_of_band":
-
-	default:
-		log.Warn().Msgf("- Warning Unexpected topic:%s", topic)
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid topic:" + topic})
-		return
-	}
-	c.Status(http.StatusOK)
 }
 
 func handleSseEvent(event *sse.Event) {
