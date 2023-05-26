@@ -33,9 +33,9 @@ import (
 )
 
 const (
-	clientTimeout  = 3 * time.Minute
-	stewardSeed    = "000000000000000000000000Steward1"
-	configFileName = "faber-config.yml"
+	httpClientTimeout = 10 * time.Second
+	stewardSeed       = "000000000000000000000000Steward1"
+	configFileName    = "faber-config.yml"
 )
 
 var (
@@ -64,8 +64,8 @@ func main() {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 
-	// Start web hook server
-	httpServer, err = startWebHookServer()
+	// Start http server to serve invitation
+	httpServer, err = startHttpServer()
 	if err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
@@ -79,6 +79,7 @@ func main() {
 
 	// Exit by pressing Ctrl-C or 'kill pid' in the shell
 	ctrlC := make(chan os.Signal, 1)
+	defer close(ctrlC)
 	signal.Notify(ctrlC, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
 
 	<-ctrlC
@@ -98,8 +99,8 @@ func main() {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 
-	// Shut down web hook server
-	if err = shutdownWebHookServer(httpServer); err != nil {
+	// Shut down http server
+	if err = shutdownHttpServer(httpServer); err != nil {
 		log.Fatal().Err(err).Caller().Msg("")
 	}
 
@@ -132,13 +133,13 @@ func initialization() error {
 	}
 
 	// Set httpClient configuration
-	httpClient.SetTimeout(clientTimeout)
+	httpClient.SetTimeout(httpClientTimeout)
 	httpClient.SetHeader("Content-Type", "application/json")
 
 	return nil
 }
 
-func startWebHookServer() (*http.Server, error) {
+func startHttpServer() (*http.Server, error) {
 	// Set up http router
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -166,7 +167,7 @@ func startWebHookServer() (*http.Server, error) {
 	return httpServer, nil
 }
 
-func shutdownWebHookServer(httpServer *http.Server) error {
+func shutdownHttpServer(httpServer *http.Server) error {
 	// Shutdown http server gracefully
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -181,10 +182,9 @@ func shutdownWebHookServer(httpServer *http.Server) error {
 }
 
 func startSseClient() error {
-	sseServerUrl := util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/sse-events")
+	sseServerUrl := util.JoinURL(viper.GetString("sse-server-url"), "/sse-events")
 	sseServerUrl += "?client_ip=" + util.GetOutboundIP().String()
 	sseServerUrl += "&client_id=faber"
-	log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
 	// Set sse client configurations
 	sseClient = sse.NewClient(sseServerUrl)
@@ -201,6 +201,7 @@ func startSseClient() error {
 
 	go func() {
 		sseCtx, sseCancel = context.WithCancel(context.Background())
+		log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
 		// Start sse client and connect to walletId stream
 		// walletId로 지정된 stream으로 event 수신, handleSseEvent()는 event 도착 순서에 따라 해당 event를 인자로 해서 순차 수행
@@ -372,70 +373,6 @@ func createOobInvitationUrlProof(c *gin.Context) {
 	c.String(http.StatusOK, invitationUrl)
 }
 
-func handleSseEvent(event *sse.Event) {
-	var sseData map[string]interface{}
-	_ = json.Unmarshal(event.Data, &sseData)
-
-	log.Debug().Msgf("handleSseEvent: %s", util.PrettyJson(&sseData))
-
-	topic := sseData["topic"].(string)
-	state := sseData["state"].(string)
-
-	log.Info().Msgf("handleSseEvent >>> topic:%s, state:%s", topic, state)
-	log.Debug().Msgf("sseData: %s", util.PrettyJson(&sseData))
-
-	switch topic {
-	case "issue_credential":
-		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendCredentialOffer()", topic, state)
-
-			if err := sendCredentialOffer(sseData["credential_exchange_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msg("")
-				return
-			}
-		} else if state == "credential_acked" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> issue credential successfully", topic, state)
-
-			if viper.GetBool("revoke-after-issue") {
-				log.Info().Msgf("- revoke-after-issue is true -> revokeCredential()")
-
-				if err := revokeCredential(sseData["credential_exchange_id"].(string)); err != nil {
-					log.Error().Err(err).Caller().Msg("")
-					return
-				}
-			}
-		}
-
-	case "present_proof":
-		if state == "proposal_received" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendProofRequest()", topic, state)
-
-			if err := sendProofRequest(sseData["connection_id"].(string)); err != nil {
-				log.Error().Err(err).Caller().Msg("")
-				return
-			}
-		} else if state == "verified" {
-			log.Info().Msgf("- Case (topic:%s, state:%s) -> printProofResult()", topic, state)
-
-			if err := printProofResult(sseData); err != nil {
-				log.Error().Err(err).Caller().Msg("")
-				return
-			}
-		}
-
-	case "connections":
-	case "basicmessages":
-	case "revocation_registry":
-	case "problem_report":
-	case "issuer_cred_rev":
-	case "out_of_band":
-
-	default:
-		log.Warn().Msgf("- Warning Unexpected topic:%s", topic)
-		return
-	}
-}
-
 func obtainStewardJwtToken() error {
 	// check if steward wallet already exists
 	stewardWallet := "steward"
@@ -525,7 +462,7 @@ func createWallet() error {
 	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	walletId = gjson.Get(resp.String(), `settings.wallet\.id`).String()
 	jwtToken = gjson.Get(resp.String(), "token").String()
-	webhookUrl = util.JoinURL(viper.GetString("server-sent-event.sse-server-url"), "/webhooks", walletId)
+	webhookUrl = util.JoinURL(viper.GetString("sse-server-url"), "/webhooks", walletId)
 
 	body = `{
 			"wallet_webhook_urls": ["` + webhookUrl + `"]
@@ -939,4 +876,66 @@ func printProofResult(body map[string]interface{}) error {
 	}
 
 	return nil
+}
+
+func handleSseEvent(event *sse.Event) {
+	var sseData map[string]interface{}
+	_ = json.Unmarshal(event.Data, &sseData)
+
+	topic := sseData["topic"].(string)
+	state := sseData["state"].(string)
+
+	log.Info().Msgf("handleSseEvent >>> topic:%s, state:%s", topic, state)
+	log.Debug().Msgf("server-sent-event data: %s", util.PrettyJson(&sseData))
+
+	switch topic {
+	case "issue_credential":
+		if state == "proposal_received" {
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendCredentialOffer()", topic, state)
+
+			if err := sendCredentialOffer(sseData["credential_exchange_id"].(string)); err != nil {
+				log.Error().Err(err).Caller().Msg("")
+				return
+			}
+		} else if state == "credential_acked" {
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> issue credential successfully", topic, state)
+
+			if viper.GetBool("revoke-after-issue") {
+				log.Info().Msgf("- revoke-after-issue is true -> revokeCredential()")
+
+				if err := revokeCredential(sseData["credential_exchange_id"].(string)); err != nil {
+					log.Error().Err(err).Caller().Msg("")
+					return
+				}
+			}
+		}
+
+	case "present_proof":
+		if state == "proposal_received" {
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> sendProofRequest()", topic, state)
+
+			if err := sendProofRequest(sseData["connection_id"].(string)); err != nil {
+				log.Error().Err(err).Caller().Msg("")
+				return
+			}
+		} else if state == "verified" {
+			log.Info().Msgf("- Case (topic:%s, state:%s) -> printProofResult()", topic, state)
+
+			if err := printProofResult(sseData); err != nil {
+				log.Error().Err(err).Caller().Msg("")
+				return
+			}
+		}
+
+	case "connections":
+	case "basicmessages":
+	case "revocation_registry":
+	case "problem_report":
+	case "issuer_cred_rev":
+	case "out_of_band":
+
+	default:
+		log.Warn().Msgf("- Warning Unexpected topic:%s", topic)
+		return
+	}
 }

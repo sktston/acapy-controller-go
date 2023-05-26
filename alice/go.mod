@@ -7,6 +7,7 @@ replace github.com/sktston/acapy-controller-go/util => ../util
 require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/go-resty/resty/v2 v2.7.0
+	github.com/r3labs/sse/v2 v2.10.0
 	github.com/rs/zerolog v1.29.1
 	github.com/sktston/acapy-controller-go/util v0.0.0-20230517103115-60e0bacee153
 	github.com/spf13/viper v1.15.0
@@ -49,6 +50,7 @@ require (
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
+	gopkg.in/cenkalti/backoff.v1 v1.1.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

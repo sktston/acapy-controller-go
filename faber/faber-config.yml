@@ -7,5 +7,4 @@ revoke-after-issue: false
 use-multitenancy: true
 delete-data-at-exit: true
 
-server-sent-event:
-  sse-server-url: http://localhost:8080 # in our case, usually the datastore URL
+sse-server-url: http://localhost:8080 # server-sent-event server, in our case usually the datastore URL

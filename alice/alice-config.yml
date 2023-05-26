@@ -8,7 +8,4 @@ delete-data-at-exit: true
 enable-invitation-with-proof: false
 issuer-invitation-url-with-proof: http://localhost:8040/oob-invitation-url-with-proof
 
-datastore:
-  enable: true
-  api-url: http://localhost:8080
-  webhook-url: http://localhost:8080/webhooks
+sse-server-url: http://localhost:8080 # server-sent-event server, in our case usually the datastore URL
