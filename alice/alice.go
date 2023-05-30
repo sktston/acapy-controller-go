@@ -144,7 +144,7 @@ func provisionController() error {
 }
 
 func startSseClient() error {
-	sseServerUrl := util.JoinURL(viper.GetString("sse-server-url"), "/sse-events")
+	sseServerUrl := util.JoinURL(viper.GetString("sse-server-url"), "/server-sent-event")
 	sseServerUrl += "?client_ip=" + util.GetOutboundIP().String()
 	sseServerUrl += "&client_id=alice"
 
@@ -161,18 +161,27 @@ func startSseClient() error {
 		log.Error().Msgf("SSE client disconnected abnormally: '%s'", c.URL)
 	})
 
+	subscribeDone := make(chan struct{})
 	go func() {
 		sseCtx, sseCancel = context.WithCancel(context.Background())
 		log.Info().Msgf("Start SSE client: %s", sseServerUrl)
 
 		// Start sse client and connect to walletId stream
-		// walletId로 지정된 stream으로 event 수신, handleSseEvent()는 event 도착 순서에 따라 해당 event를 인자로 해서 순차 수행
+		// walletId로 지정된 stream으로 subscribe하면 서버 측에 해당 stream 생성
 		// 주의: http 핸들러와는 달리 handleSseEvent()는 병렬 수행되지 않음. 한 event에 대해 모두 수행 후 다음 event에 대해 수행
-		if err := sseClient.SubscribeWithContext(sseCtx, walletId, handleSseEvent); err != nil {
+		events := make(chan *sse.Event)
+		if err := sseClient.SubscribeChanWithContext(sseCtx, walletId, events); err != nil {
 			log.Fatal().Err(err).Caller().Msg("")
+		}
+		subscribeDone <- struct{}{}
+
+		for event := range events {
+			handleSseEvent(event)
 		}
 	}()
 
+	// subscribe 완료 기다리지 않으면 server에 sse stream 생성되기 전 서버가 event publish하여 메시지 손실 발생
+	<-subscribeDone
 	return nil
 }
 
