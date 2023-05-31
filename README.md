@@ -1,9 +1,4 @@
 # Controller of aries-cloudagent-python (Go version)
-## Overview
-<img  src=https://user-images.githubusercontent.com/60603923/197473367-8e8b469f-fc95-4c0e-956e-5f595406d99c.png width=75% alt="system introduction">
-
-- Implementation of [Hyperledger Aries Cloud Agent - Python(ACA-Py)](https://github.com/hyperledger/aries-cloudagent-python) compatible Controller.
-
 ## Repository structure
 The controller implementation is in directory [alice](./alice) & [faber](./faber). 
 
@@ -17,7 +12,7 @@ Repository structure details:
 ```
 
 ## Prerequisite 
-- Go version 1.18 or higher for source compilation
+- Go version 1.20 or higher for source compilation
 - Docker & docker-compose for running ACA-Py
 ---
 
@@ -25,14 +20,15 @@ Repository structure details:
 ### Run cloud agency with multitenancy support
 - ACA-Py agency opens 8020 port (endpoint) and 8021 port (admin). 
 Check admin (swagger API) http://localhost:8021/api/doc
+- Cloud-agent-data-store opens 8080 port. Check swaager API http://localhost:8080/swagger/index.html#/
+- Cloud-agent-data-store receives webhook from ACA-Py and delivers webhook data to corresponding controllers through server-sent-event
 ```
 $ cd docker
 $ docker-compose up --build
 ```
 
 ### Run Faber controller
-- Faber controller opens 8040 port.
-- It receives webhook message from Faber agent by POST http://localhost:8040/webhooks/topic/{topic}/ 
+- Faber controller receives server-sent-event message from cloud-agent- data-store  
 - Also, It presents invitation-url by GET http://localhost:8040/invitation-url
 - Detailed configuration is in [faber-config.yml](./faber/faber-config.yml)
 ```
@@ -42,9 +38,7 @@ $ ./faber
 ```
 
 ### Run Alice controller
-- Alice controller polls the Alice agent periodically instead of receiving webhooks
-  - ~~Alice controller opens 8050 port.~~ (deprecated)
-  - ~~It receives webhook message from alice agent by POST http://localhost:8050/webhooks/topic/{topic}/~~ (deprecated)
+- Alice controller receives server-sent-event message from cloud-agent- data-store
 - When alice controller starts, it gets invitation from faber controller and proceeds connection, credential and proof(presentation) sequentially.
 - Detailed configuration is in [alice-config.yml](./alice/alice-config.yml)
 ```

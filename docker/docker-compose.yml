@@ -45,5 +45,31 @@ services:
                  "--invite-base-url", "https://invite-base-url",
                  "--public-invites" ]
 
+  postgres-datastore:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5432:5432
+
+  redis-datastore:
+    image: "redis:7.0.11-alpine"
+    command: redis-server
+    ports:
+      - 6379:6379
+
+  mwp-cloudagent-datastore:
+    build:
+      context: https://${GIT_TOKEN}@github.com/Mobile-Wallet-Platform/mwp-cloudagent-datastore.git#develop
+      dockerfile: ./Dockerfile
+    ports:
+      - 8080:8080
+    depends_on:
+      - postgres-datastore
+      - redis-datastore
+    extra_hosts:
+      - "localhost:host-gateway"
+    entrypoint: ["/go_app"]
+
 networks:
   acapy:
