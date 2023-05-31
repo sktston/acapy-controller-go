@@ -22,9 +22,10 @@ Repository structure details:
 Check admin (swagger API) http://localhost:8021/api/doc
 - Cloud-agent-data-store opens 8080 port. Check swaager API http://localhost:8080/swagger/index.html#/
 - Cloud-agent-data-store receives webhook from ACA-Py and delivers webhook data to corresponding controllers through server-sent-event
+- Github access token is required to run docker-compose
 ```
 $ cd docker
-$ docker-compose up --build
+$ GIT_TOKEN=<your_git_token> docker-compose up --build
 ```
 
 ### Run Faber controller
