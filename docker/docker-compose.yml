@@ -46,14 +46,14 @@ services:
   postgres-datastore:
     image: postgres
     environment:
+      - PGUSER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:
       - 5432:5432
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 3s
+      timeout: 1s
 
   redis-datastore:
     image: "redis:7.0.11-alpine"
