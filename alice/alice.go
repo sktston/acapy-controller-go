@@ -164,7 +164,7 @@ func startSseClient() error {
 	subscribeDone := make(chan struct{})
 	go func() {
 		sseCtx, sseCancel = context.WithCancel(context.Background())
-		log.Info().Msgf("Start SSE client: %s", sseServerUrl)
+		log.Info().Msgf("Start SSE client and wait for connection to complete: %s", sseServerUrl)
 
 		// Start sse client and connect to walletId stream
 		// walletId로 지정된 stream으로 subscribe하면 서버 측에 해당 stream 생성
