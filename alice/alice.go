@@ -370,17 +370,24 @@ func sendPresentationProposal(connectionId string) error {
 }
 
 func getMatchingCredentialId(credentials string, mAttr string) (string, error) {
-	// sample credentials
-	//credentials = "[{\"cred_info\": {\"referent\": \"99f35030-2377-4db7-87bf-77b7b524065c\", \"schema_id\": \"6eAZ7gtyXSboPmt7suCTuz:2:degree_schema:88.39.31\", \"cred_def_id\": \"6eAZ7gtyXSboPmt7suCTuz:3:CL:813249544:tag.88.39.31\", \"rev_reg_id\": \"6eAZ7gtyXSboPmt7suCTuz:4:6eAZ7gtyXSboPmt7suCTuz:3:CL:813249544:tag.88.39.31:CL_ACCUM:29c1d7fe-064e-4281-b34c-ef39fd97a87f\", \"cred_rev_id\": \"1\", \"attrs\": {\"degree\": \"maths\", \"name\": \"alice\", \"photo\": \"base64EncodedJpegImage\", \"date\": \"05-2018\", \"age\": \"25\"}}, \"interval\": null, \"presentation_referents\": [\"attr_date\", \"attr_degree\", \"attr_photo\", \"pred_age\", \"attr_name\"]}, {\"cred_info\": {\"referent\": \"787365df-1fe1-4c6e-9b56-e3602ffccb0e\", \"schema_id\": \"6eAZ7gtyXSboPmt7suCTuz:2:degree_schema2:88.39.31\", \"cred_def_id\": \"6eAZ7gtyXSboPmt7suCTuz:3:CL:1456292544:tag.88.39.312\", \"rev_reg_id\": \"6eAZ7gtyXSboPmt7suCTuz:4:6eAZ7gtyXSboPmt7suCTuz:3:CL:1456292544:tag.88.39.312:CL_ACCUM:55e137eb-49fc-45e6-89ab-a3064daa7b04\", \"cred_rev_id\": \"1\", \"attrs\": {\"phone\": \"010-1234-5637\", \"name\": \"alice\"}}, \"interval\": null, \"presentation_referents\": [\"attr_phone\"]}]"
-
 	credIDList := gjson.Get(credentials, "#.cred_info.referent").Array()
+	credRevIdList := gjson.Get(credentials, "#.cred_info.cred_rev_id").Array()
 	presAttrsList := gjson.Get(credentials, "#.presentation_referents").Array()
 
 	credId := ""
-	for idx, presAttrs := range presAttrsList {
-		for _, presAttr := range presAttrs.Array() {
-			if presAttr.String() == mAttr {
-				credId = credIDList[idx].String()
+	maxCredRevId := 0
+	for idx, presAttrs := range presAttrsList { // 각 credential에 대해서 loop
+		for _, presAttr := range presAttrs.Array() { // credential의 각 attribute에 대해서 loop
+			if presAttr.String() == mAttr { // 찾고자 하는 attribute라면
+				if credRevIdList[idx].String() == "" { // case of not support revocation
+					credId = credIDList[idx].String()
+				} else { // case of support revocation
+					curRevId, _ := strconv.Atoi(credRevIdList[idx].String()) // idx = credential index
+					if curRevId > maxCredRevId {                             // cred_rev_id가 가장 큰 credential 선택
+						maxCredRevId = curRevId
+						credId = credIDList[idx].String()
+					}
+				}
 			}
 		}
 	}
@@ -411,17 +418,19 @@ func sendPresentation(presExId string) error {
 	log.Debug().Msgf("response: %s", util.PrettyJson(resp.String()))
 	credentials := resp.String()
 
+	// sjon package: the dot and colon characters can be escaped with \
+	replacer := strings.NewReplacer(`.`, `\.`, `:`, `\:`)
+
 	newReqAttrs := "{}"
 	newSelfAttrs := "{}"
 	reqAttrs := gjson.Get(presReq, "requested_attributes").Map()
 	for key := range reqAttrs {
 		credId, err := getMatchingCredentialId(credentials, key)
+		key = replacer.Replace(key)
 		if err != nil {
-			if credId == "" {
-				if key == "attr_address" {
-					newSelfAttrs, _ = sjson.Set(newSelfAttrs, key, "self attested address value")
-					continue
-				}
+			if key == "attr_address" {
+				newSelfAttrs, _ = sjson.Set(newSelfAttrs, key, "self attested address value")
+				continue
 			}
 			log.Error().Err(err).Caller().Msg("")
 			return err
