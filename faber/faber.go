@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	httpClientTimeout = 10 * time.Second
+	httpClientTimeout = 30 * time.Second
 	stewardSeed       = "000000000000000000000000Steward1"
 	configFileName    = "faber-config.yml"
 )

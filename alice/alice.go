@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	httpClientTimeout = 10 * time.Second
+	httpClientTimeout = 30 * time.Second
 	configFileName    = "alice-config.yml"
 )
 
