@@ -22,7 +22,7 @@ services:
                  "--wallet-local-did",
                  "--wallet-type", "askar",
                  "--wallet-name", "base",
-                 "--wallet-key", "base.key",
+                 "--wallet-key", "secret",
                  "--multitenancy-config", "{\"wallet_type\":\"askar-profile\",\"wallet_name\":\"askar-profile-name\"}",
                  "--auto-accept-invites",
                  "--auto-accept-requests",
@@ -68,7 +68,8 @@ services:
     ports:
       - 8080:8080
     environment:
-      - REDIS_ADDR=localhost:6379
+      - SERVER-SENT-EVENT_ENABLE=true
+      - SERVER-SENT-EVENT_REDIS_ADDR=localhost:6379
     depends_on:
       postgres-datastore:
         condition: service_healthy

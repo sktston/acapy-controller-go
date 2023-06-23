@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	httpClientTimeout = 30 * time.Second
+	httpClientTimeout = 60 * time.Second
 	stewardSeed       = "000000000000000000000000Steward1"
 	configFileName    = "faber-config.yml"
 )
@@ -188,9 +188,7 @@ func startSseClient() error {
 
 	// Set sse client configurations
 	sseClient = sse.NewClient(sseServerUrl)
-	sseClient.Headers = map[string]string{
-		"Authorization": "Bearer " + jwtToken,
-	}
+	sseClient.Headers["Authorization"] = "Bearer " + jwtToken
 	sseClient.OnConnect(func(c *sse.Client) {
 		log.Info().Msgf("SSE client connected: '%s'", c.URL)
 	})
